@@ -565,7 +565,7 @@ export default function Home() {
                     <circle cx="12" cy="9" r="2.5" stroke="currentColor" strokeWidth="1.5" />
                   </svg>
                 </div>
-                <h3 class="step-title">Choose your arena</h3>
+                <h3 className="step-title">Choose your arena</h3>
                 <p className="step-desc">
                   Select from 30+ interview types — behavioral, system design, product sense, coding.
                   Tailored to your target role and company.
@@ -1003,7 +1003,7 @@ export default function Home() {
       </section>
 
       {/* Pricing Section */}
-      <section class="pricing-section" id="pricing">
+      <section className="pricing-section" id="pricing">
         <div className="section-container">
           <div
             className={`reveal-item reveal ${revealPricingTitle.visible ? 'is-visible' : ''}`}
