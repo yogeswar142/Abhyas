@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Abhyas — AI-Powered Mock Interview Platform</title>
+  <meta name="description" content="Abhyas transforms how you prepare for interviews. AI-powered, real-time feedback, proven results. Practice until it feels natural." />
+  <meta property="og:title" content="Abhyas — AI-Powered Mock Interview Platform" />
+  <meta property="og:description" content="Practice smarter. Interview better. Land the role." />
+  <meta property="og:type" content="website" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- Custom Cursor -->
+  <div class="cursor" id="cursor"></div>
+  <div class="cursor-dot" id="cursorDot"></div>
+
+  <!-- Navigation -->
+  <nav class="nav" id="nav">
+    <div class="nav-inner">
+      <a href="#" class="nav-logo" id="navLogo">
+        <span class="logo-mark">A</span>
+        <span class="logo-text">bhyas</span>
+      </a>
+      <div class="nav-links">
+        <a href="#process" class="nav-link">How it works</a>
+        <a href="#metrics" class="nav-link">Results</a>
+        <a href="#sessions" class="nav-link">Sessions</a>
+        <a href="#pricing" class="nav-link">Pricing</a>
+      </div>
+      <div class="nav-cta">
+        <a href="#" class="btn-ghost">Sign in</a>
+        <a href="#" class="btn-primary magnetic" id="navCta">Start practicing</a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Hero Section -->
+  <section class="hero" id="hero">
+    <div class="hero-bg">
+      <div class="hero-grid"></div>
+      <div class="hero-radial"></div>
+    </div>
+
+    <div class="hero-content">
+      <div class="hero-left">
+        <div class="hero-badge">
+          <span class="badge-dot"></span>
+          <span>Practice. Improve. Land the role.</span>
+        </div>
+
+        <h1 class="hero-headline">
+          <span class="headline-line">The way you</span>
+          <span class="headline-line headline-italic">prepare</span>
+          <span class="headline-line">defines the</span>
+          <span class="headline-line">outcome.</span>
+        </h1>
+
+        <p class="hero-sub">
+          Abhyas puts an AI interviewer across the table.<br />
+          Real questions. Instant feedback. No judgment.
+        </p>
+
+        <div class="hero-actions">
+          <a href="#" class="btn-hero magnetic" id="heroCta">
+            <span>Begin your practice</span>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </a>
+          <a href="#" class="btn-watch">
+            <div class="watch-icon">
+              <svg width="12" height="14" viewBox="0 0 12 14" fill="none">
+                <path d="M1 1.5l10 5.5-10 5.5V1.5z" fill="currentColor"/>
+              </svg>
+            </div>
+            Watch demo
+          </a>
+        </div>
+
+        <div class="hero-social-proof">
+          <div class="proof-avatars">
+            <div class="proof-avatar" style="background: #6366f1;"></div>
+            <div class="proof-avatar" style="background: #8b5cf6;"></div>
+            <div class="proof-avatar" style="background: #a78bfa;"></div>
+            <div class="proof-avatar" style="background: #c4b5fd;"></div>
+          </div>
+          <p>Trusted by <strong>12,000+</strong> candidates at Google, Meta, Amazon</p>
+        </div>
+      </div>
+
+      <div class="hero-right">
+        <div class="hero-float-container" id="heroFloat">
+          <!-- Floating Interview Dashboard -->
+          <div class="float-card float-main" id="floatMain">
+            <div class="card-header">
+              <div class="card-dots">
+                <span></span><span></span><span></span>
+              </div>
+              <span class="card-title">Live Interview Session</span>
+              <div class="card-status">
+                <span class="status-dot"></span>
+                <span>Active</span>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="interview-scene">
+                <div class="ai-orb-container">
+                  <div class="ai-orb" id="aiOrb">
+                    <div class="orb-ring orb-ring-1"></div>
+                    <div class="orb-ring orb-ring-2"></div>
+                    <div class="orb-ring orb-ring-3"></div>
+                    <div class="orb-core">
+                      <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+                        <circle cx="14" cy="14" r="6" fill="white" opacity="0.9"/>
+                        <circle cx="14" cy="14" r="10" stroke="white" stroke-width="1" opacity="0.3"/>
+                        <circle cx="14" cy="14" r="13" stroke="white" stroke-width="0.5" opacity="0.15"/>
+                      </svg>
+                    </div>
+                  </div>
+                  <div class="ai-label">Abhyas AI</div>
+                </div>
+                <div class="question-bubble">
+                  <div class="bubble-typing" id="typingIndicator">
+                    <span></span><span></span><span></span>
+                  </div>
+                  <p class="bubble-text" id="bubbleText">Tell me about a time you led a cross-functional team through ambiguity...</p>
+                </div>
+              </div>
+              <div class="waveform" id="waveform">
+                <div class="wave-bars">
+                  <span></span><span></span><span></span><span></span><span></span>
+                  <span></span><span></span><span></span><span></span><span></span>
+                  <span></span><span></span><span></span><span></span><span></span>
+                  <span></span><span></span><span></span><span></span><span></span>
+                </div>
+                <span class="wave-label">Listening…</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Floating Score Card -->
+          <div class="float-card float-score" id="floatScore">
+            <div class="score-label">Confidence Score</div>
+            <div class="score-value">
+              <span class="score-num" data-target="87">0</span>
+              <span class="score-pct">%</span>
+            </div>
+            <div class="score-bar">
+              <div class="score-fill" id="scoreFill"></div>
+            </div>
+            <div class="score-delta">↑ 14% from last session</div>
+          </div>
+
+          <!-- Floating Feedback Card -->
+          <div class="float-card float-feedback" id="floatFeedback">
+            <div class="feedback-header">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <circle cx="7" cy="7" r="6.5" stroke="#6366f1" stroke-width="1"/>
+                <path d="M4 7l2 2 4-4" stroke="#6366f1" stroke-width="1.2" stroke-linecap="round"/>
+              </svg>
+              <span>AI Feedback</span>
+            </div>
+            <p class="feedback-text">Strong opening. Add a quantified outcome to make the impact memorable.</p>
+          </div>
+
+          <!-- Floating Metric Cards -->
+          <div class="float-card float-metric float-metric-1" id="floatMetric1">
+            <div class="metric-val">4.8s</div>
+            <div class="metric-key">Avg response time</div>
+          </div>
+
+          <div class="float-card float-metric float-metric-2" id="floatMetric2">
+            <div class="metric-val">
+              <span class="metric-live" data-target="23">0</span>
+            </div>
+            <div class="metric-key">Sessions today</div>
+          </div>
+
+          <!-- Glow -->
+          <div class="float-glow"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scroll indicator -->
+    <div class="scroll-indicator">
+      <div class="scroll-line"></div>
+      <span>Scroll</span>
+    </div>
+  </section>
+
+  <!-- Logos Bar -->
+  <section class="logos-section">
+    <p class="logos-label">Candidates hired at</p>
+    <div class="logos-track">
+      <div class="logos-inner" id="logosInner">
+        <span class="logo-company">Google</span>
+        <span class="logo-company">Meta</span>
+        <span class="logo-company">Amazon</span>
+        <span class="logo-company">Microsoft</span>
+        <span class="logo-company">Apple</span>
+        <span class="logo-company">Netflix</span>
+        <span class="logo-company">Stripe</span>
+        <span class="logo-company">Figma</span>
+        <span class="logo-company">Linear</span>
+        <span class="logo-company">Notion</span>
+        <span class="logo-company">Google</span>
+        <span class="logo-company">Meta</span>
+        <span class="logo-company">Amazon</span>
+        <span class="logo-company">Microsoft</span>
+        <span class="logo-company">Apple</span>
+        <span class="logo-company">Netflix</span>
+        <span class="logo-company">Stripe</span>
+        <span class="logo-company">Figma</span>
+        <span class="logo-company">Linear</span>
+        <span class="logo-company">Notion</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Process Section — "How Abhyas Works" -->
+  <section class="process-section" id="process">
+    <div class="section-container">
+      <div class="section-eyebrow">The Practice Loop</div>
+      <h2 class="section-headline">Three steps.<br />Infinite improvement.</h2>
+
+      <div class="process-grid">
+        <div class="process-step reveal-item" id="step1">
+          <div class="step-number">01</div>
+          <div class="step-content">
+            <div class="step-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" stroke="currentColor" stroke-width="1.5"/>
+                <circle cx="12" cy="9" r="2.5" stroke="currentColor" stroke-width="1.5"/>
+              </svg>
+            </div>
+            <h3 class="step-title">Choose your arena</h3>
+            <p class="step-desc">Select from 30+ interview types — behavioral, system design, product sense, coding. Tailored to your target role and company.</p>
+          </div>
+          <div class="step-visual">
+            <div class="step-vis-card">
+              <div class="vis-row" style="--delay:0s">
+                <div class="vis-tag active">Software Engineer</div>
+                <div class="vis-tag">Product Manager</div>
+              </div>
+              <div class="vis-row" style="--delay:0.1s">
+                <div class="vis-tag">Data Scientist</div>
+                <div class="vis-tag active">System Design</div>
+              </div>
+              <div class="vis-row" style="--delay:0.2s">
+                <div class="vis-tag">Leadership</div>
+                <div class="vis-tag">Behavioral</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="process-step reveal-item" id="step2">
+          <div class="step-number">02</div>
+          <div class="step-content">
+            <div class="step-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                <rect x="3" y="3" width="18" height="18" rx="4" stroke="currentColor" stroke-width="1.5"/>
+                <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.5"/>
+                <path d="M12 3v3M12 18v3M3 12h3M18 12h3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <h3 class="step-title">Practice with AI</h3>
+            <p class="step-desc">A sophisticated AI interviewer adapts in real-time. It follows up on vague answers, pushes back when needed, and simulates a real panel.</p>
+          </div>
+          <div class="step-visual">
+            <div class="step-vis-convo">
+              <div class="convo-bubble ai">
+                <span class="convo-who">Abhyas AI</span>
+                How would you design a notification system for 1 billion users?
+              </div>
+              <div class="convo-bubble user">
+                <span class="convo-who">You</span>
+                I'd start by defining the scale requirements...
+              </div>
+              <div class="convo-bubble ai">
+                <span class="convo-who">Abhyas AI</span>
+                Good. Now, how do you handle message ordering?
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="process-step reveal-item" id="step3">
+          <div class="step-number">03</div>
+          <div class="step-content">
+            <div class="step-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                <path d="M3 17l4-4 4 3 5-7 5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M21 21H3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <h3 class="step-title">Receive deep analysis</h3>
+            <p class="step-desc">After every session, receive a structured breakdown — clarity, structure, confidence, technical depth. Then a precision roadmap to improve.</p>
+          </div>
+          <div class="step-visual">
+            <div class="step-vis-metrics">
+              <div class="vis-metric-row">
+                <span>Clarity</span>
+                <div class="vis-metric-bar"><div class="vis-metric-fill" style="--w: 82%; --delay: 0.2s;"></div></div>
+                <span>82</span>
+              </div>
+              <div class="vis-metric-row">
+                <span>Structure</span>
+                <div class="vis-metric-bar"><div class="vis-metric-fill" style="--w: 74%; --delay: 0.4s;"></div></div>
+                <span>74</span>
+              </div>
+              <div class="vis-metric-row">
+                <span>Confidence</span>
+                <div class="vis-metric-bar"><div class="vis-metric-fill" style="--w: 91%; --delay: 0.6s;"></div></div>
+                <span>91</span>
+              </div>
+              <div class="vis-metric-row">
+                <span>Depth</span>
+                <div class="vis-metric-bar"><div class="vis-metric-fill" style="--w: 68%; --delay: 0.8s;"></div></div>
+                <span>68</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Metrics / Results Section -->
+  <section class="metrics-section" id="metrics">
+    <div class="section-container">
+      <div class="metrics-inner">
+        <div class="metrics-text reveal-item">
+          <div class="section-eyebrow">The Numbers</div>
+          <h2 class="section-headline">Practice compounds.<br />Results speak.</h2>
+          <p class="metrics-sub">Every session teaches the AI more about your unique weaknesses. The feedback gets sharper. You get better. Fast.</p>
+        </div>
+        <div class="metrics-stats">
+          <div class="stat-card reveal-item">
+            <div class="stat-number">
+              <span class="count-up" data-target="89">0</span>%
+            </div>
+            <div class="stat-label">offer rate after 10+ sessions</div>
+            <div class="stat-bar"><div class="stat-bar-fill" style="--w:89%"></div></div>
+          </div>
+          <div class="stat-card reveal-item">
+            <div class="stat-number">
+              3.2×
+            </div>
+            <div class="stat-label">faster improvement vs solo prep</div>
+            <div class="stat-bar"><div class="stat-bar-fill" style="--w:72%"></div></div>
+          </div>
+          <div class="stat-card reveal-item">
+            <div class="stat-number">
+              <span class="count-up" data-target="12">0</span>k+
+            </div>
+            <div class="stat-label">candidates practice every month</div>
+            <div class="stat-bar"><div class="stat-bar-fill" style="--w:60%"></div></div>
+          </div>
+          <div class="stat-card reveal-item">
+            <div class="stat-number">
+              <span class="count-up" data-target="97">0</span>%
+            </div>
+            <div class="stat-label">would recommend to a friend</div>
+            <div class="stat-bar"><div class="stat-bar-fill" style="--w:97%"></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Sessions / Features Showcase -->
+  <section class="sessions-section" id="sessions">
+    <div class="section-container">
+      <div class="section-eyebrow">Session Types</div>
+      <h2 class="section-headline">Every interview.<br />One platform.</h2>
+
+      <div class="sessions-grid">
+        <div class="session-card session-large reveal-item" id="sessionBehavioral">
+          <div class="session-tag">Most popular</div>
+          <h3 class="session-name">Behavioral</h3>
+          <p class="session-desc">Master the STAR method. Craft narratives that land with any interviewer at any company.</p>
+          <div class="session-preview">
+            <div class="preview-msg">Walk me through your greatest leadership challenge.</div>
+            <div class="preview-response">Situation: Q3, 12-person team, deadline at risk...</div>
+          </div>
+          <div class="session-footer">
+            <span>48 question banks</span>
+            <span>FAANG-calibrated</span>
+          </div>
+        </div>
+
+        <div class="session-card reveal-item" id="sessionSystem">
+          <div class="session-badge">⚙</div>
+          <h3 class="session-name">System Design</h3>
+          <p class="session-desc">From URL shorteners to distributed payment systems. Real scale. Real pressure.</p>
+          <div class="session-chips">
+            <span>Scalability</span>
+            <span>Trade-offs</span>
+            <span>Databases</span>
+          </div>
+        </div>
+
+        <div class="session-card reveal-item" id="sessionCoding">
+          <div class="session-badge">{ }</div>
+          <h3 class="session-name">Technical Coding</h3>
+          <p class="session-desc">Voice-driven code walkthroughs. Explain your thinking out loud as you solve.</p>
+          <div class="session-chips">
+            <span>DSA</span>
+            <span>Complexity</span>
+            <span>Optimization</span>
+          </div>
+        </div>
+
+        <div class="session-card reveal-item" id="sessionProduct">
+          <div class="session-badge">◈</div>
+          <h3 class="session-name">Product Sense</h3>
+          <p class="session-desc">Metrics, user empathy, trade-off frameworks. Be the PM who thinks in systems.</p>
+          <div class="session-chips">
+            <span>Root cause</span>
+            <span>Metrics</span>
+            <span>Prioritization</span>
+          </div>
+        </div>
+
+        <div class="session-card session-wide reveal-item" id="sessionCustom">
+          <div class="session-badge">✦</div>
+          <h3 class="session-name">Custom Interview</h3>
+          <p class="session-desc">Upload your JD. Paste the job description. Abhyas generates a full mock tailored to that exact role in seconds.</p>
+          <div class="custom-upload">
+            <div class="upload-zone">
+              <span>Drop your job description</span>
+              <span class="upload-sub">Paste · Upload · Link</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Testimonial Section -->
+  <section class="testimonials-section" id="testimonials">
+    <div class="section-container">
+      <div class="section-eyebrow">Voices</div>
+      <h2 class="section-headline">They practiced.<br />They landed.</h2>
+      <div class="testimonials-grid">
+        <div class="testi-card reveal-item">
+          <div class="testi-quote">"Abhyas made me feel like I was already inside the Google interview. The AI didn't let me be vague — it pushed until I articulated my impact."</div>
+          <div class="testi-author">
+            <div class="testi-avatar" style="background: linear-gradient(135deg,#6366f1,#8b5cf6);">R</div>
+            <div>
+              <div class="testi-name">Riya Kapoor</div>
+              <div class="testi-role">SWE @ Google · ex-Flipkart</div>
+            </div>
+          </div>
+        </div>
+        <div class="testi-card reveal-item">
+          <div class="testi-quote">"I bombed 4 interviews before Abhyas. After 15 sessions, I cracked Meta PM. The feedback reports are surgical."</div>
+          <div class="testi-author">
+            <div class="testi-avatar" style="background: linear-gradient(135deg,#0ea5e9,#6366f1);">A</div>
+            <div>
+              <div class="testi-name">Arjun Mehta</div>
+              <div class="testi-role">PM @ Meta · ex-Razorpay</div>
+            </div>
+          </div>
+        </div>
+        <div class="testi-card testi-card-highlight reveal-item">
+          <div class="testi-quote">"The closest thing I've found to practicing with an actual senior engineer. Zero fluff. Pure signal."</div>
+          <div class="testi-author">
+            <div class="testi-avatar" style="background: linear-gradient(135deg,#f59e0b,#ef4444);">S</div>
+            <div>
+              <div class="testi-name">Sara Chen</div>
+              <div class="testi-role">Staff Engineer @ Stripe</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Pricing Section -->
+  <section class="pricing-section" id="pricing">
+    <div class="section-container">
+      <div class="section-eyebrow">Pricing</div>
+      <h2 class="section-headline">Simple. Honest.</h2>
+
+      <div class="pricing-grid">
+        <div class="pricing-card reveal-item">
+          <div class="plan-name">Starter</div>
+          <div class="plan-price">
+            <span class="price-amount">Free</span>
+          </div>
+          <div class="plan-desc">Get a feel for what Abhyas can do.</div>
+          <ul class="plan-features">
+            <li><span class="feat-check">✓</span> 3 free sessions / month</li>
+            <li><span class="feat-check">✓</span> Basic feedback reports</li>
+            <li><span class="feat-check">✓</span> Behavioral & coding tracks</li>
+            <li class="feat-muted"><span>—</span> Custom JD upload</li>
+            <li class="feat-muted"><span>—</span> Company-specific prep</li>
+          </ul>
+          <a href="#" class="plan-btn plan-btn-ghost magnetic">Get started free</a>
+        </div>
+
+        <div class="pricing-card pricing-card-pro reveal-item">
+          <div class="plan-badge">Most popular</div>
+          <div class="plan-name">Pro</div>
+          <div class="plan-price">
+            <span class="price-amount">₹999</span>
+            <span class="price-period">/ month</span>
+          </div>
+          <div class="plan-desc">For serious candidates targeting top-tier roles.</div>
+          <ul class="plan-features">
+            <li><span class="feat-check">✓</span> Unlimited sessions</li>
+            <li><span class="feat-check">✓</span> Deep AI feedback reports</li>
+            <li><span class="feat-check">✓</span> All 5 interview tracks</li>
+            <li><span class="feat-check">✓</span> Custom JD upload</li>
+            <li><span class="feat-check">✓</span> Company-specific prep</li>
+          </ul>
+          <a href="#" class="plan-btn plan-btn-primary magnetic">Start Pro trial</a>
+        </div>
+
+        <div class="pricing-card reveal-item">
+          <div class="plan-name">Teams</div>
+          <div class="plan-price">
+            <span class="price-amount">Custom</span>
+          </div>
+          <div class="plan-desc">For placement cells, bootcamps, and enterprises.</div>
+          <ul class="plan-features">
+            <li><span class="feat-check">✓</span> Everything in Pro</li>
+            <li><span class="feat-check">✓</span> Admin dashboard</li>
+            <li><span class="feat-check">✓</span> Cohort analytics</li>
+            <li><span class="feat-check">✓</span> Branded experience</li>
+            <li><span class="feat-check">✓</span> Dedicated support</li>
+          </ul>
+          <a href="#" class="plan-btn plan-btn-ghost magnetic">Contact us</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Final CTA -->
+  <section class="final-cta-section">
+    <div class="section-container">
+      <div class="cta-inner reveal-item">
+        <div class="cta-glow"></div>
+        <div class="section-eyebrow">Ready?</div>
+        <h2 class="cta-headline">
+          The interview isn't<br />
+          <em>someday.</em> It's next week.
+        </h2>
+        <p class="cta-sub">Start your first session in under 60 seconds. No resume needed.</p>
+        <a href="#" class="btn-hero magnetic" id="finalCta">
+          <span>Begin practicing now</span>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-top">
+        <div class="footer-brand">
+          <a href="#" class="nav-logo">
+            <span class="logo-mark">A</span>
+            <span class="logo-text">bhyas</span>
+          </a>
+          <p class="footer-brand-desc">AI-Powered Mock Interview Platform.<br />Practice until it feels natural.</p>
+        </div>
+        <div class="footer-links-grid">
+          <div class="footer-col">
+            <div class="footer-col-title">Product</div>
+            <a href="#">How it works</a>
+            <a href="#">Session Types</a>
+            <a href="#">Pricing</a>
+            <a href="#">Changelog</a>
+          </div>
+          <div class="footer-col">
+            <div class="footer-col-title">Resources</div>
+            <a href="#">Interview Guide</a>
+            <a href="#">Blog</a>
+            <a href="#">Question Bank</a>
+            <a href="#">Community</a>
+          </div>
+          <div class="footer-col">
+            <div class="footer-col-title">Company</div>
+            <a href="#">About</a>
+            <a href="#">Careers</a>
+            <a href="#">Press</a>
+            <a href="#">Contact</a>
+          </div>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <span>© 2026 Abhyas. All rights reserved.</span>
+        <div class="footer-legal">
+          <a href="#">Privacy</a>
+          <a href="#">Terms</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
