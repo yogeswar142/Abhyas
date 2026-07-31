@@ -1,71 +1,62 @@
-# Abhyas (अभ्यास)
+# Abhyas
 
-> **Practice until it feels natural.**  
-> An AI-powered mock interview platform crafted with precision, depth, and real-time performance analytics.
+Most people prepare for interviews alone — reading leetcode solutions, rehearsing answers in their head, or asking a friend who's equally nervous. It doesn't work.
 
-![Abhyas Interface](https://img.shields.io/badge/Status-Production%20Ready-6366f1?style=for-the-badge)
-![License](https://img.shields.io/badge/License-MIT-blue.style=for-the-badge)
-![Stack](https://img.shields.io/badge/Stack-HTML5%20%7C%20CSS3%20%7C%20ES6%2B-informational?style=for-the-badge)
+**Abhyas** is a platform where you practice with an AI that behaves like an actual interviewer. It listens, pushes back, and gives you a structured breakdown of what went wrong — not just encouragement.
 
----
-
-## ✦ About Abhyas
-
-*Abhyas* (Sanskrit: **अभ्यास**, meaning *Practice*) is a high-caliber AI mock interview platform designed to simulate high-stakes interviews at top tech companies. 
-
-Instead of generic question banks or simple prompt templates, Abhyas delivers:
-- **Adaptive AI Interviewer**: Simulates panel behavior, pushes back on vague answers, and tests technical/behavioral depth in real time.
-- **Instant Surgical Feedback**: Deep-dive analytics evaluating clarity, structure (STAR method), technical correctness, and executive confidence.
-- **Tailored Arenas**: Specialized modules for System Design, Coding, Behavioral, Product Sense, and custom Job Descriptions.
+The name is Sanskrit for *practice*. That's the entire premise.
 
 ---
 
-## 🎨 Design Systems & Craftsmanship
+## What we're building
 
-The Abhyas web experience is engineered with an uncompromising focus on visual identity, performance, and interaction design:
+A mock interview platform that adapts to the candidate, not the other way around.
 
-- **Typography**: Inter paired with *Instrument Serif* for editorial authority.
-- **3D Floating Dashboard**: Perspective card stack with animated voice waveforms, real-time metrics, and live feedback toasts.
-- **Micro-Interactions**: Custom inertia cursor, 3D cursor-tilting cards, magnetic CTA triggers, and ambient cursor lighting.
-- **Dark Mode Palette**: Deep indigo (`#6366f1`) accents on high-contrast dark space background tokens (`#07070f`).
+When you start a session, you pick your target role and company. The AI takes it from there — asking real questions, following up when your answer is vague, and challenging your assumptions when you're too comfortable. After the session, you get a report that breaks down your performance across clarity, structure, confidence, and technical accuracy.
+
+We're not trying to simulate a friendly conversation. We're trying to simulate pressure.
+
+**Session types:**
+- Behavioral (STAR method, leadership, conflict)
+- System design
+- Technical coding walk-throughs
+- Product sense and metrics
+- Custom — paste a JD, get a tailored session in seconds
 
 ---
 
-## ⚡ Quick Start
+## Stack
 
-### Local Preview
+| Layer | Technology |
+|-------|-----------|
+| Frontend | Next.js 16 · React 19 · Tailwind v4 · shadcn/ui |
+| Backend | FastAPI (Python) |
+| Database | PostgreSQL via Supabase |
 
-To run the web experience locally, clone the repository and launch a static server:
+---
+
+## Running locally
 
 ```bash
 git clone https://github.com/yogeswar142/Abhyas.git
 cd Abhyas
 
-# Launch using Python's built-in HTTP server
+# Static preview (landing page)
 python3 -m http.server 4321
 ```
 
-Then visit [`http://localhost:4321`](http://localhost:4321) in your browser.
+Open `http://localhost:4321`.
 
 ---
 
-## 📁 Architecture
+## Status
 
-```
-Abhyas/
-├── index.html        # Semantic HTML5 layout & structural storytelling
-├── style.css         # Custom CSS3 design tokens, responsive grid & animations
-└── script.js        # Vanilla JS micro-interactions, 3D tilt & observers
-```
+We're in early development. The landing page is live. The platform is being built.
+
+If you're a candidate who wants early access, or an engineer who wants to contribute — reach out.
 
 ---
 
-## 🚀 Deployment
+## License
 
-The site is built with zero framework overhead (pure HTML/CSS/JS) and can be hosted seamlessly on **Vercel**, **Netlify**, or **GitHub Pages**.
-
----
-
-## 📄 License
-
-Distributed under the MIT License. See `LICENSE` for details.
+MIT
