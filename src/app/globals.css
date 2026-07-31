@@ -1384,3 +1384,13 @@ img { display: block; max-width: 100%; }
   .testimonials-grid { grid-template-columns: 1fr; gap: 1rem; }
   .pricing-grid { grid-template-columns: 1fr; }
   .footer-top { grid-template-columns: 1fr; gap: 2rem; }
+}
+
+@media (max-width: 640px) {
+  .nav-links { display: none; }
+  .nav-cta .btn-ghost { display: none; }
+  .metrics-stats { grid-template-columns: 1fr; }
+  .sessions-grid { grid-template-columns: 1fr; }
+  .hero-headline { font-size: 2.2rem; }
+}
+
