@@ -1,3 +1,4 @@
+@import "tailwindcss";
 /* ============================================================
    Abhyas — Design System
    ============================================================ */
@@ -1276,68 +1277,6 @@ img { display: block; max-width: 100%; }
 }
 .plan-btn-primary:hover { opacity: 0.88; transform: translateY(-1px); }
 
-/* ── Tech Stack Section ───────────────────────────────────── */
-.techstack-section {
-  padding: 5rem 2rem;
-  border-top: 1px solid var(--border);
-}
-.techstack-inner {
-  display: flex;
-  align-items: center;
-  gap: 3rem;
-  flex-wrap: wrap;
-}
-.techstack-label {
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: var(--text-3);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-.techstack-grid {
-  display: flex;
-  align-items: center;
-  gap: 2.5rem;
-  flex-wrap: wrap;
-  flex: 1;
-}
-.techstack-col {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-.techstack-tier {
-  font-size: 0.68rem;
-  font-weight: 600;
-  color: var(--text-3);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-.techstack-items {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-}
-.tech-chip {
-  font-size: 0.75rem;
-  font-weight: 500;
-  color: var(--text-1);
-  background: var(--bg-1);
-  border: 1px solid var(--border);
-  padding: 0.3rem 0.7rem;
-  border-radius: 100px;
-  transition: border-color 0.2s, color 0.2s;
-}
-.tech-chip:hover { border-color: var(--border-hv); color: var(--text-0); }
-
-.techstack-divider {
-  width: 1px;
-  height: 48px;
-  background: var(--border);
-  flex-shrink: 0;
-}
-
 /* ── Final CTA ────────────────────────────────────────────── */
 .final-cta-section {
   padding: 10rem 2rem;
@@ -1445,15 +1384,3 @@ img { display: block; max-width: 100%; }
   .testimonials-grid { grid-template-columns: 1fr; gap: 1rem; }
   .pricing-grid { grid-template-columns: 1fr; }
   .footer-top { grid-template-columns: 1fr; gap: 2rem; }
-  .techstack-inner { gap: 2rem; }
-}
-
-@media (max-width: 640px) {
-  .nav-links { display: none; }
-  .nav-cta .btn-ghost { display: none; }
-  .metrics-stats { grid-template-columns: 1fr; }
-  .sessions-grid { grid-template-columns: 1fr; }
-  .hero-headline { font-size: 2.2rem; }
-  .techstack-grid { flex-direction: column; gap: 1.5rem; }
-  .techstack-divider { width: 100%; height: 1px; }
-}
