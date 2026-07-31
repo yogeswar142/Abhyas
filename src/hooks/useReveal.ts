@@ -1,8 +1,8 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 
-export function useReveal(options?: IntersectionObserverInit) {
-  const ref = useRef<HTMLElement | null>(null)
+export function useReveal<T extends HTMLElement = HTMLElement>(options?: IntersectionObserverInit) {
+  const ref = useRef<T | null>(null)
   const [visible, setVisible] = useState(false)
 
   useEffect(() => {

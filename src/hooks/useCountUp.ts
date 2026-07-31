@@ -1,8 +1,8 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 
-export function useCountUp(target: number, duration = 1600) {
-  const ref = useRef<HTMLElement | null>(null)
+export function useCountUp<T extends HTMLElement = HTMLElement>(target: number, duration = 1600) {
+  const ref = useRef<T | null>(null)
   const [count, setCount] = useState(0)
 
   useEffect(() => {
