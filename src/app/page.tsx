@@ -22,7 +22,7 @@ const ScrollProgress = () => {
   return (
     <div
       style={{ width }}
-      className="fixed top-[64px] left-0 h-[1px] bg-[rgba(255,255,255,0.15)] z-[101] transition-[width] duration-75 ease-out"
+      className="fixed top-[64px] left-0 h-[2px] bg-gradient-to-r from-violet-500 via-blue-500 to-pink-500 z-[101] transition-[width] duration-75 ease-out"
     />
   )
 }
@@ -167,6 +167,40 @@ const Waveform = () => {
 export default function Home() {
   const [scrolled, setScrolled] = useState(false)
   const [isMarqueePaused, setIsMarqueeMarqueePaused] = useState(false)
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark')
+
+  // Theme configuration on mount/change
+  useEffect(() => {
+    const savedTheme = localStorage.getItem('theme') as 'dark' | 'light' | null
+    if (savedTheme) {
+      setTheme(savedTheme)
+      if (savedTheme === 'light') {
+        document.body.classList.add('light-theme')
+      } else {
+        document.body.classList.remove('light-theme')
+      }
+    } else {
+      const prefersLight = window.matchMedia('(prefers-color-scheme: light)').matches
+      if (prefersLight) {
+        setTheme('light')
+        document.body.classList.add('light-theme')
+      } else {
+        setTheme('dark')
+        document.body.classList.remove('light-theme')
+      }
+    }
+  }, [])
+
+  const toggleTheme = () => {
+    const nextTheme = theme === 'dark' ? 'light' : 'dark'
+    setTheme(nextTheme)
+    localStorage.setItem('theme', nextTheme)
+    if (nextTheme === 'light') {
+      document.body.classList.add('light-theme')
+    } else {
+      document.body.classList.remove('light-theme')
+    }
+  }
 
   // Navigation scroll observer
   useEffect(() => {
@@ -291,8 +325,8 @@ export default function Home() {
       <nav className={`nav ${scrolled ? 'scrolled' : ''}`} id="nav">
         <div className="nav-inner">
           <a href="#" className="nav-logo" id="navLogo">
-            <span className="logo-mark">A</span>
-            <span className="logo-text">bhyas</span>
+            <img src="/symbol.png" alt="Abhyas icon" className="nav-symbol-img" />
+            <span className="nav-brand-text">Abhyas</span>
           </a>
           <div className="nav-links">
             <a href="#process" className="nav-link">
@@ -309,6 +343,30 @@ export default function Home() {
             </a>
           </div>
           <div className="nav-cta">
+            <button
+              onClick={toggleTheme}
+              className="theme-toggle-btn"
+              aria-label="Toggle theme"
+              title="Toggle theme"
+            >
+              <svg className="sun-and-moon" aria-hidden="true" width="20" height="20" viewBox="0 0 24 24">
+                <mask id="moon-mask">
+                  <rect x="0" y="0" width="100%" height="100%" fill="white" />
+                  <circle className="moon-mask" cx="17" cy="7" r="9" fill="black" />
+                </mask>
+                <circle className="sun-core" cx="12" cy="12" r="9" mask="url(#moon-mask)" fill="currentColor" />
+                <g className="sun-beams" stroke="currentColor">
+                  <line x1="12" y1="1" x2="12" y2="3" />
+                  <line x1="12" y1="21" x2="12" y2="23" />
+                  <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+                  <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+                  <line x1="1" y1="12" x2="3" y2="12" />
+                  <line x1="21" y1="12" x2="23" y2="12" />
+                  <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+                  <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+                </g>
+              </svg>
+            </button>
             <a href="#" className="btn-ghost">
               Sign in
             </a>
@@ -421,10 +479,10 @@ export default function Home() {
                         <div className="orb-ring orb-ring-2 animate-orb-r2"></div>
                         <div className="orb-ring orb-ring-3 animate-orb-r3"></div>
                         <div className="orb-core animate-orb-core">
-                          <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-                            <circle cx="14" cy="14" r="6" fill="white" opacity="0.9" />
-                            <circle cx="14" cy="14" r="10" stroke="white" strokeWidth="1" opacity="0.3" />
-                            <circle cx="14" cy="14" r="13" stroke="white" strokeWidth="0.5" opacity="0.15" />
+                          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                            <circle cx="12" cy="12" r="5" fill="white" opacity="0.95" />
+                            <circle cx="12" cy="12" r="9" stroke="white" strokeWidth="1" opacity="0.3" />
+                            <circle cx="12" cy="12" r="11" stroke="white" strokeWidth="0.5" opacity="0.15" />
                           </svg>
                         </div>
                       </div>
@@ -495,11 +553,6 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Scroll indicator */}
-        <div className="scroll-indicator">
-          <div className="scroll-line animate-scroll-line"></div>
-          <span>Scroll</span>
-        </div>
       </section>
 
       {/* Logos Bar */}
@@ -1146,8 +1199,8 @@ export default function Home() {
           <div className="footer-top">
             <div className="footer-brand">
               <a href="#" className="nav-logo">
-                <span className="logo-mark">A</span>
-                <span className="logo-text">bhyas</span>
+                <img src="/symbol.png" alt="Abhyas icon" className="nav-symbol-img" />
+                <span className="nav-brand-text">Abhyas</span>
               </a>
               <p className="footer-brand-desc">
                 AI-Powered Mock Interview Platform.
