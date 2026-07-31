@@ -1518,28 +1518,214 @@ img { display: block; max-width: 100%; }
 .footer-legal { display: flex; gap: 1.5rem; }
 .footer-legal a:hover { color: var(--text-1); }
 
-/* ── Responsive ───────────────────────────────────────────── */
-@media (max-width: 1024px) {
-  .hero-content { grid-template-columns: 1fr; padding: 4rem 2rem; }
-  .hero-right { display: none; }
-  .process-step { grid-template-columns: 56px 1fr; }
-  .step-visual { display: none; }
-  .metrics-inner { grid-template-columns: 1fr; }
-  .sessions-grid { grid-template-columns: 1fr 1fr; }
-  .session-large { grid-row: span 1; }
-  .session-wide { grid-column: span 1; }
-  .testimonials-grid { grid-template-columns: 1fr; gap: 1rem; }
-  .pricing-grid { grid-template-columns: 1fr; }
-  .footer-top { grid-template-columns: 1fr; gap: 2rem; }
+/* ── Hamburger Button (hidden on desktop) ──────────────────── */
+.hamburger-btn {
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 5px;
+  width: 38px;
+  height: 38px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
 }
 
-@media (max-width: 640px) {
+.ham-line {
+  display: block;
+  width: 18px;
+  height: 2px;
+  background: var(--text-1);
+  border-radius: 2px;
+  transition: transform 0.3s var(--ease-spring), opacity 0.3s ease;
+  transform-origin: center;
+}
+
+/* Mobile drawer (hidden on desktop) */
+.mobile-menu {
+  display: none;
+}
+
+/* ── Responsive ───────────────────────────────────────────── */
+@media (max-width: 1024px) {
+  /* Hero */
+  .hero-content {
+    grid-template-columns: 1fr;
+    padding: 4rem 1.5rem 3rem;
+    gap: 2.5rem;
+  }
+  .hero-right { display: none; }
+
+  /* Process */
+  .process-step { grid-template-columns: 56px 1fr; gap: 1.5rem; }
+  .step-visual { display: none; }
+  .process-section { padding: 5rem 1.5rem; }
+
+  /* Metrics */
+  .metrics-section { padding: 5rem 1.5rem; }
+  .metrics-inner { grid-template-columns: 1fr; gap: 3rem; }
+
+  /* Sessions */
+  .sessions-section { padding: 5rem 1.5rem; }
+  .sessions-grid { grid-template-columns: 1fr 1fr; }
+  .session-large { grid-row: span 1; }
+  .session-wide { grid-column: span 2; }
+
+  /* Testimonials */
+  .testimonials-section { padding: 5rem 1.5rem; }
+  .testimonials-grid { grid-template-columns: 1fr; gap: 1rem; }
+
+  /* Pricing */
+  .pricing-section { padding: 5rem 1.5rem; }
+  .pricing-grid { grid-template-columns: 1fr; max-width: 480px; margin: 0 auto; }
+
+  /* Footer */
+  .footer-top { grid-template-columns: 1fr; gap: 2rem; }
+
+  /* Final CTA */
+  .final-cta-section { padding: 6rem 1.5rem; }
+}
+
+@media (max-width: 768px) {
+  /* Nav — show hamburger, hide desktop links & cta text */
+  .nav { padding: 0 1.25rem; }
   .nav-links { display: none; }
   .nav-cta .btn-ghost { display: none; }
-  .metrics-stats { grid-template-columns: 1fr; }
+  .nav-cta .btn-primary { display: none; }
+  .nav-cta .magnetic { display: none; }
+  .hamburger-btn { display: flex; }
+
+  /* Mobile drawer */
+  .mobile-menu {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    overflow: hidden;
+    max-height: 0;
+    background: var(--nav-bg);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--border);
+    transition: max-height 0.4s var(--ease-smooth), padding 0.3s ease;
+    padding: 0 1.25rem;
+  }
+  .mobile-menu.mobile-menu-open {
+    max-height: 400px;
+    padding: 1rem 1.25rem 1.5rem;
+  }
+  .mobile-nav-link {
+    display: block;
+    font-size: 1rem;
+    font-weight: 500;
+    color: var(--text-1);
+    padding: 0.85rem 0;
+    border-bottom: 1px solid var(--border);
+    transition: color 0.2s;
+  }
+  .mobile-nav-link:hover { color: var(--text-0); }
+  .mobile-menu-cta {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding-top: 1.25rem;
+  }
+  .mobile-menu-cta .mobile-nav-link {
+    border-bottom: none;
+    padding: 0;
+    color: var(--text-2);
+    font-size: 0.9rem;
+  }
+  .mobile-menu-cta .btn-hero {
+    width: 100%;
+    text-align: center;
+    font-size: 0.95rem;
+    padding: 0.85rem;
+  }
+
+  /* Hero */
+  .hero { min-height: auto; padding-top: 64px; }
+  .hero-content { padding: 3rem 1.25rem 2.5rem; }
+  .hero-headline { font-size: clamp(2rem, 9vw, 2.8rem); }
+  .headline-italic { font-size: clamp(2.2rem, 9.5vw, 3.2rem); }
+  .hero-sub { font-size: 0.95rem; }
+  .hero-actions { flex-direction: column; align-items: flex-start; gap: 0.875rem; }
+  .btn-hero { width: 100%; justify-content: center; }
+  .scroll-indicator { display: none; }
+
+  /* Logos */
+  .logos-section { padding: 2.5rem 1.25rem; }
+
+  /* Process */
+  .process-section { padding: 4rem 1.25rem; }
+  .process-step {
+    grid-template-columns: 1fr;
+    padding: 1.5rem;
+    gap: 1rem;
+  }
+  .step-number { padding-top: 0; }
+
+  /* Metrics */
+  .metrics-section { padding: 4rem 1.25rem; }
+  .metrics-stats { grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+  .stat-number { font-size: 1.8rem; }
+
+  /* Sessions */
+  .sessions-section { padding: 4rem 1.25rem; }
   .sessions-grid { grid-template-columns: 1fr; }
-  .hero-headline { font-size: 2.2rem; }
+  .session-wide { grid-column: span 1; }
+  .session-card { padding: 1.5rem; }
+
+  /* Testimonials */
+  .testimonials-section { padding: 4rem 1.25rem; }
+
+  /* Pricing */
+  .pricing-section { padding: 4rem 1.25rem; }
+  .pricing-grid { max-width: 100%; }
+  .pricing-card { padding: 1.75rem; }
+
+  /* CTA */
+  .final-cta-section { padding: 5rem 1.25rem; }
+  .cta-headline { font-size: clamp(1.8rem, 8vw, 2.8rem); }
+
+  /* Footer */
+  .footer { padding: 3rem 1.25rem 2rem; }
+  .footer-top { padding-bottom: 2rem; margin-bottom: 2rem; }
+  .footer-links-grid { grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+  .footer-bottom { flex-direction: column; gap: 0.75rem; text-align: center; }
 }
+
+@media (max-width: 480px) {
+  /* Tighter padding everywhere */
+  .nav { padding: 0 1rem; }
+  .hero-content { padding: 2.5rem 1rem 2rem; }
+  .logos-section { padding: 2rem 1rem; }
+  .process-section { padding: 3.5rem 1rem; }
+  .metrics-section { padding: 3.5rem 1rem; }
+  .sessions-section { padding: 3.5rem 1rem; }
+  .testimonials-section { padding: 3.5rem 1rem; }
+  .pricing-section { padding: 3.5rem 1rem; }
+  .final-cta-section { padding: 4rem 1rem; }
+  .footer { padding: 2.5rem 1rem 1.75rem; }
+
+  /* Metrics — stack 2-col stats to 1 col */
+  .metrics-stats { grid-template-columns: 1fr; }
+  .stat-card { padding: 1.25rem; }
+
+  /* Footer links — single col */
+  .footer-links-grid { grid-template-columns: 1fr; gap: 1.25rem; }
+
+  /* Section headlines */
+  .section-headline { font-size: clamp(1.6rem, 7vw, 2.2rem); }
+  .process-section .section-headline { margin-bottom: 2.5rem; }
+  .sessions-section .section-headline { margin-bottom: 2rem; }
+  .testimonials-section .section-headline { margin-bottom: 2rem; }
+  .pricing-section .section-headline { margin-bottom: 2rem; }
+}
+
 
 /* ── Multi-section Vibrant Enhancements ───────────────────── */
 

@@ -168,6 +168,7 @@ export default function Home() {
   const [scrolled, setScrolled] = useState(false)
   const [isMarqueePaused, setIsMarqueeMarqueePaused] = useState(false)
   const [theme, setTheme] = useState<'dark' | 'light'>('dark')
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   // Theme configuration on mount/change
   useEffect(() => {
@@ -329,18 +330,10 @@ export default function Home() {
             <span className="nav-brand-text">Abhyas</span>
           </a>
           <div className="nav-links">
-            <a href="#process" className="nav-link">
-              How it works
-            </a>
-            <a href="#metrics" className="nav-link">
-              Results
-            </a>
-            <a href="#sessions" className="nav-link">
-              Sessions
-            </a>
-            <a href="#pricing" className="nav-link">
-              Pricing
-            </a>
+            <a href="#process" className="nav-link">How it works</a>
+            <a href="#metrics" className="nav-link">Results</a>
+            <a href="#sessions" className="nav-link">Sessions</a>
+            <a href="#pricing" className="nav-link">Pricing</a>
           </div>
           <div className="nav-cta">
             <button
@@ -367,12 +360,29 @@ export default function Home() {
                 </g>
               </svg>
             </button>
-            <a href="#" className="btn-ghost">
-              Sign in
-            </a>
-            <Magnetic className="btn-primary magnetic" id="navCta">
-              Start practicing
-            </Magnetic>
+            <a href="#" className="btn-ghost">Sign in</a>
+            <Magnetic className="btn-primary magnetic" id="navCta">Start practicing</Magnetic>
+            {/* Hamburger — mobile only */}
+            <button
+              className="hamburger-btn"
+              onClick={() => setMobileMenuOpen(o => !o)}
+              aria-label="Toggle menu"
+            >
+              <span className={`ham-line ${mobileMenuOpen ? 'open' : ''}`} />
+              <span className={`ham-line ${mobileMenuOpen ? 'open' : ''}`} />
+              <span className={`ham-line ${mobileMenuOpen ? 'open' : ''}`} />
+            </button>
+          </div>
+        </div>
+        {/* Mobile drawer */}
+        <div className={`mobile-menu ${mobileMenuOpen ? 'mobile-menu-open' : ''}`}>
+          <a href="#process" className="mobile-nav-link" onClick={() => setMobileMenuOpen(false)}>How it works</a>
+          <a href="#metrics" className="mobile-nav-link" onClick={() => setMobileMenuOpen(false)}>Results</a>
+          <a href="#sessions" className="mobile-nav-link" onClick={() => setMobileMenuOpen(false)}>Sessions</a>
+          <a href="#pricing" className="mobile-nav-link" onClick={() => setMobileMenuOpen(false)}>Pricing</a>
+          <div className="mobile-menu-cta">
+            <a href="#" className="mobile-nav-link" onClick={() => setMobileMenuOpen(false)}>Sign in</a>
+            <a href="#" className="btn-hero" style={{ justifyContent: 'center' }} onClick={() => setMobileMenuOpen(false)}>Start practicing</a>
           </div>
         </div>
       </nav>
