@@ -360,8 +360,11 @@ export default function Home() {
                 </g>
               </svg>
             </button>
-            <a href="#" className="btn-ghost">Sign in</a>
-            <Magnetic className="btn-primary magnetic" id="navCta">Start practicing</Magnetic>
+            {/* Desktop only items */}
+            <span className="nav-desktop-only" style={{ display: 'contents' }}>
+              <a href="#" className="btn-ghost">Sign in</a>
+              <Magnetic className="btn-primary magnetic" id="navCta">Start practicing</Magnetic>
+            </span>
             {/* Hamburger — mobile only */}
             <button
               className="hamburger-btn"

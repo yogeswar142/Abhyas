@@ -122,6 +122,12 @@ img { display: block; max-width: 100%; }
   display: flex;
   align-items: center;
   gap: 2rem;
+  overflow: hidden;
+}
+
+/* Desktop-only nav items — hidden on mobile */
+.nav-desktop-only {
+  display: contents;
 }
 
 .nav-logo {
@@ -1591,31 +1597,34 @@ img { display: block; max-width: 100%; }
 }
 
 @media (max-width: 768px) {
-  /* Nav — show hamburger, hide desktop links & cta text */
-  .nav { padding: 0 1.25rem; }
+  /* Nav — show hamburger, hide desktop links & CTA */
+  .nav { padding: 0 1.25rem; overflow: visible; }
+  .nav-inner { overflow: visible; gap: 0.5rem; }
   .nav-links { display: none; }
-  .nav-cta .btn-ghost { display: none; }
-  .nav-cta .btn-primary { display: none; }
-  .nav-cta .magnetic { display: none; }
+  .nav-desktop-only { display: none !important; }
   .hamburger-btn { display: flex; }
 
-  /* Mobile drawer */
+  /* Mobile drawer — full-width, solid bg, below nav */
   .mobile-menu {
     display: flex;
     flex-direction: column;
     gap: 0;
     overflow: hidden;
     max-height: 0;
-    background: var(--nav-bg);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border-bottom: 1px solid var(--border);
+    background: var(--bg-0);
+    border-bottom: 2px solid var(--border);
     transition: max-height 0.4s var(--ease-smooth), padding 0.3s ease;
     padding: 0 1.25rem;
+    position: absolute;
+    top: 64px;
+    left: 0;
+    right: 0;
+    z-index: 99;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.15);
   }
   .mobile-menu.mobile-menu-open {
-    max-height: 400px;
-    padding: 1rem 1.25rem 1.5rem;
+    max-height: 500px;
+    padding: 0.5rem 1.25rem 1.5rem;
   }
   .mobile-nav-link {
     display: block;
@@ -1864,4 +1873,49 @@ img { display: block; max-width: 100%; }
   -webkit-text-fill-color: transparent;
   display: inline-block;
 }
+
+/* ── Touch-device hover suppression ──────────────────────────
+   All :hover effects below ONLY apply on devices with real hover
+   (mouse/trackpad). Prevents stuck hover states on mobile/tablet.
+   ──────────────────────────────────────────────────────────── */
+@media (hover: hover) and (pointer: fine) {
+  .btn-ghost:hover { color: var(--text-0); background: var(--surface-hv); }
+  .btn-primary:hover { opacity: 0.88; }
+  .btn-hero:hover { opacity: 0.88; transform: translateY(-1px); }
+  .btn-hero:hover svg { transform: translateX(3px); }
+  .btn-watch:hover { color: var(--text-0); }
+  .btn-watch:hover .watch-icon { border-color: var(--text-2); background: var(--surface-hv); }
+  .nav-link:hover { color: var(--text-0); background: var(--surface-hv); }
+  .nav-logo:hover { opacity: 0.9; }
+  .theme-toggle-btn:hover { color: var(--text-0); background-color: var(--surface-hv); border-color: var(--border-hv); transform: scale(1.05); }
+  .float-card:hover { border-color: var(--border-hv); }
+  .stat-card:hover { border-color: var(--border-hv); transform: translateY(-2px); }
+  .session-card:hover { border-color: var(--border-hv); transform: translateY(-3px); }
+  .session-card:hover .session-badge { background: var(--surface-hv); color: var(--text-1); }
+  .testi-card:hover { transform: translateY(-3px); border-color: var(--border-hv); }
+  .pricing-card:hover { transform: translateY(-3px); border-color: var(--border-hv); }
+  .process-step:hover { background: var(--surface); border-color: var(--border); }
+  .plan-btn-ghost:hover { background: var(--surface-hv); color: var(--text-0); }
+  .plan-btn-primary:hover { opacity: 0.88; transform: translateY(-1px); }
+  .upload-zone:hover { border-color: var(--border-hv); background: var(--surface); }
+  .logo-company:hover { color: var(--text-2); }
+  .mobile-nav-link:hover { color: var(--text-0); }
+  .footer-col a:hover { color: var(--text-1); }
+  .footer-legal a:hover { color: var(--text-1); }
+}
+
+/* Strip transform transitions on touch so cards don't get stuck in lifted state */
+@media (hover: none) {
+  .btn-hero,
+  .stat-card,
+  .session-card,
+  .testi-card,
+  .pricing-card,
+  .float-card,
+  .theme-toggle-btn {
+    transition: opacity 0.2s ease;
+    transform: none !important;
+  }
+}
+
 
