@@ -2,203 +2,285 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/Button';
-import { Card } from '@/components/ui/Card';
-import { Input } from '@/components/ui/Input';
-import { Select } from '@/components/ui/Select';
 import { INTERVIEW_TYPES, SESSION_DURATIONS } from '@/lib/constants';
+
+const T = {
+  card: 'var(--v-card)', cardHov: 'var(--v-raised)', border: 'var(--v-border)',
+  line: 'var(--v-border)', green: 'var(--v-accent)', greenGhost: 'var(--v-float)',
+  text0: 'var(--v-tx0)', text1: 'var(--v-tx1)', text2: 'var(--v-tx2)', text3: 'var(--v-tx3)',
+};
+
+const sL: React.CSSProperties = {
+  fontSize: 10, fontWeight: 600, textTransform: 'uppercase',
+  letterSpacing: '0.18em', color: T.text3,
+};
+
+function Panel({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
+  return (
+    <div style={{ backgroundColor: T.card, border: `1px solid ${T.border}`, borderRadius: 16, ...style }}>
+      {children}
+    </div>
+  );
+}
+
+function FieldInput({ label, value, onChange, placeholder }: {
+  label: string; value: string; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void; placeholder?: string;
+}) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <label style={{ fontSize: 11, fontWeight: 600, color: T.text2, textTransform: 'uppercase', letterSpacing: '0.1em' }}>{label}</label>
+      <input
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        style={{
+          backgroundColor: T.cardHov, border: `1px solid ${T.border}`, borderRadius: 10,
+          padding: '10px 14px', fontSize: 13, color: T.text0, outline: 'none',
+          width: '100%', boxSizing: 'border-box', fontFamily: 'inherit',
+        }}
+        onFocus={e => { e.target.style.borderColor = T.green; e.target.style.boxShadow = '0 0 0 3px rgba(34,197,94,0.12)'; }}
+        onBlur={e => { e.target.style.borderColor = T.border; e.target.style.boxShadow = 'none'; }}
+      />
+    </div>
+  );
+}
+
+function FieldSelect({ label, value, onChange, options }: {
+  label: string; value: string; onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void;
+  options: { value: string; label: string }[];
+}) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <label style={{ fontSize: 11, fontWeight: 600, color: T.text2, textTransform: 'uppercase', letterSpacing: '0.1em' }}>{label}</label>
+      <select
+        value={value}
+        onChange={onChange}
+        style={{
+          backgroundColor: T.cardHov, border: `1px solid ${T.border}`, borderRadius: 10,
+          padding: '10px 14px', fontSize: 13, color: T.text0, outline: 'none',
+          width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', cursor: 'pointer',
+          appearance: 'none',
+          backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
+          backgroundRepeat: 'no-repeat',
+          backgroundPosition: 'right 14px center',
+          paddingRight: 36,
+        }}
+      >
+        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+    </div>
+  );
+}
+
+// ── Mic level ─────────────────────────────────────────────────────────────────
+
+function MicLevel() {
+  const [vol, setVol] = useState(3);
+  useEffect(() => {
+    const id = setInterval(() => setVol(Math.floor(Math.random() * 6) + 1), 220);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 8,
+      backgroundColor: T.cardHov, border: `1px solid ${T.border}`,
+      borderRadius: 10, padding: '8px 14px',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 14 }}>
+        {Array.from({ length: 6 }).map((_, i) => (
+          <span key={i} style={{
+            width: 3, height: `${(i + 1) * 2}px`, borderRadius: 2,
+            transition: 'background 0.1s ease',
+            backgroundColor: i < vol ? T.green : 'rgba(255,255,255,0.1)',
+            display: 'block',
+          }} />
+        ))}
+      </div>
+      <span style={{ fontSize: 10, fontFamily: 'monospace', color: T.text3, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+        Mic check
+      </span>
+    </div>
+  );
+}
+
+// ── Type icons ────────────────────────────────────────────────────────────────
 
 const TYPE_ICONS: Record<string, React.ReactNode> = {
   behavioral: (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
-      <circle cx="9" cy="7" r="4"></circle>
-      <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
-      <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" />
+      <path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
     </svg>
   ),
   'system-design': (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
-      <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
-      <line x1="6" y1="6" x2="6.01" y2="6"></line>
-      <line x1="6" y1="18" x2="6.01" y2="18"></line>
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="2" width="20" height="8" rx="2" /><rect x="2" y="14" width="20" height="8" rx="2" />
+      <line x1="6" y1="6" x2="6.01" y2="6" /><line x1="6" y1="18" x2="6.01" y2="18" />
     </svg>
   ),
   technical: (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="16 18 22 12 16 6"></polyline>
-      <polyline points="8 6 2 12 8 18"></polyline>
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" />
     </svg>
   ),
   product: (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
     </svg>
   ),
   custom: (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path>
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />
     </svg>
-  )
+  ),
 };
 
-const MicTester = () => {
-  const [vol, setVol] = useState(0);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setVol(Math.floor(Math.random() * 6) + 1);
-    }, 250);
-    return () => clearInterval(timer);
-  }, []);
-
-  return (
-    <div className="flex items-center gap-2 bg-[var(--bg-2)] border border-[var(--border)] rounded-xl px-4 py-2">
-      <div className="flex items-center gap-1 h-3 shrink-0">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <span 
-            key={i} 
-            className="w-1 rounded-full transition-all duration-150"
-            style={{ 
-              height: `${(i + 1) * 2}px`, 
-              backgroundColor: i < vol ? 'var(--accent)' : 'var(--text-3)' 
-            }}
-          />
-        ))}
-      </div>
-      <span className="text-[10px] font-mono text-[var(--text-2)] uppercase font-semibold">Mic Level Check</span>
-    </div>
-  );
-};
+// ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function NewInterviewPage() {
   const router = useRouter();
-  const [selectedType, setSelectedType] = useState<string>('behavioral');
+  const [selectedType, setSelectedType] = useState('behavioral');
   const [company, setCompany] = useState('Google');
   const [role, setRole] = useState('Senior Software Engineer');
   const [difficulty, setDifficulty] = useState('medium');
   const [duration, setDuration] = useState('45');
+  const [isStarting, setIsStarting] = useState(false);
 
-  const handleStart = () => {
+  const handleStart = async () => {
+    setIsStarting(true);
+    await new Promise(r => setTimeout(r, 700));
     router.push('/interview/new_session_123');
   };
 
   return (
-    <div className="space-y-12 pb-24">
-      {/* Editorial Header */}
-      <div className="border-b border-[var(--border)]/40 pb-6 space-y-1.5">
-        <span className="text-[10px] font-mono tracking-widest text-[var(--accent)] uppercase font-bold">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 28, width: '100%', paddingBottom: 64 }}>
+
+      {/* Header */}
+      <div style={{ borderBottom: `1px solid ${T.line}`, paddingBottom: 24, display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <span style={{ fontSize: 10, fontFamily: 'monospace', fontWeight: 700, color: T.green, letterSpacing: '0.15em', textTransform: 'uppercase' }}>
           Calibrator Module
         </span>
-        <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-[var(--text-0)]">
-          Configure Interview Simulator
+        <h1 style={{ fontSize: 'clamp(1.8rem,4vw,2.5rem)', fontWeight: 900, letterSpacing: '-0.03em', color: T.text0, margin: 0 }}>
+          New Interview Session
         </h1>
-        <p className="text-xs sm:text-sm text-[var(--text-2)] max-w-2xl leading-relaxed">
-          Calibrate the AI persona for target company standards, custom role titles, and specific interview depth.
+        <p style={{ fontSize: 12, color: T.text2, marginTop: 4, lineHeight: 1.6 }}>
+          Calibrate the AI persona for target company standards, custom role titles, and interview depth.
         </p>
       </div>
 
-      {/* Step 1: Select Interview Domain */}
-      <section className="space-y-4">
-        <div className="flex items-center gap-3">
-          <span className="text-xs font-mono font-bold text-[var(--accent)] bg-[var(--accent-dim)] border border-[rgba(34,197,94,0.2)] px-2.5 py-1 rounded-lg">
-            STEP 01
-          </span>
-          <h2 className="text-base font-bold text-[var(--text-0)] tracking-tight">Select Interview Domain</h2>
+      {/* Step 1 — Domain */}
+      <section style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{
+            fontSize: 9, fontFamily: 'monospace', fontWeight: 700, color: T.green,
+            backgroundColor: T.greenGhost, padding: '4px 10px', borderRadius: 8, letterSpacing: '0.12em',
+          }}>STEP 01</span>
+          <h2 style={{ fontSize: 14, fontWeight: 700, color: T.text0, margin: 0 }}>Select Interview Domain</h2>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
           {INTERVIEW_TYPES.map(type => {
-            const isSelected = selectedType === type.id;
+            const sel = selectedType === type.id;
             return (
-              <Card 
-                key={type.id} 
-                spotlight
-                padding="lg" 
-                hoverable 
-                className={`cursor-pointer transition-all duration-300 relative group overflow-hidden ${
-                  isSelected 
-                    ? 'border-[var(--accent)] bg-[var(--accent-dim)] shadow-[0_0_40px_-5px_rgba(34,197,94,0.15)]' 
-                    : 'border-[var(--border)] bg-[var(--bg-1)] hover:border-[var(--border-hv)]'
-                }`}
+              <button
+                key={type.id}
                 onClick={() => setSelectedType(type.id)}
+                style={{
+                  textAlign: 'left', padding: 18, borderRadius: 14,
+                  border: sel ? '1px solid rgba(34,197,94,0.4)' : `1px solid ${T.border}`,
+                  backgroundColor: sel ? T.greenGhost : T.card,
+                  cursor: 'pointer', transition: 'all 0.2s ease', position: 'relative',
+                  boxShadow: sel ? '0 0 24px -6px rgba(34,197,94,0.2)' : 'none',
+                }}
+                onMouseEnter={e => { if (!sel) e.currentTarget.style.backgroundColor = T.cardHov; }}
+                onMouseLeave={e => { if (!sel) e.currentTarget.style.backgroundColor = T.card; }}
               >
-                <div className="flex items-center justify-between mb-4">
-                  <div className={`p-2.5 rounded-xl transition-all duration-200 ${isSelected ? 'bg-[var(--accent)] text-white shadow-md' : 'bg-[var(--bg-2)] border border-[var(--border)] text-[var(--text-2)] group-hover:text-[var(--accent)]'}`}>
-                    {TYPE_ICONS[type.id] || TYPE_ICONS.custom}
-                  </div>
-                  {isSelected && (
-                    <span className="w-2 h-2 rounded-full bg-[var(--accent)] shadow-[0_0_8px_var(--accent)]" />
-                  )}
+                {sel && <span style={{ position: 'absolute', top: 12, right: 12, width: 7, height: 7, borderRadius: '50%', backgroundColor: T.green, boxShadow: `0 0 8px ${T.green}` }} />}
+                <div style={{
+                  width: 38, height: 38, borderRadius: 10, marginBottom: 12,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: sel ? T.green : T.cardHov,
+                  border: sel ? 'none' : `1px solid ${T.border}`,
+                  color: sel ? '#000' : T.text2,
+                }}>
+                  {TYPE_ICONS[type.id] ?? TYPE_ICONS.custom}
                 </div>
-                <h3 className="font-bold text-sm text-[var(--text-0)] mb-1 group-hover:text-[var(--accent)] transition-colors">{type.label}</h3>
-                <p className="text-xs text-[var(--text-2)] leading-relaxed">{type.description}</p>
-              </Card>
+                <h3 style={{ fontSize: 13, fontWeight: 700, color: sel ? T.text0 : T.text1, margin: '0 0 6px' }}>
+                  {type.label}
+                </h3>
+                <p style={{ fontSize: 11, color: T.text3, lineHeight: 1.5, margin: 0 }}>{type.description}</p>
+              </button>
             );
           })}
         </div>
       </section>
 
-      {/* Step 2: Parameter Sliders */}
-      <section className="space-y-4">
-        <div className="flex items-center gap-3">
-          <span className="text-xs font-mono font-bold text-[var(--text-1)] bg-[var(--bg-2)] border border-[var(--border)] px-2.5 py-1 rounded-lg">
-            STEP 02
-          </span>
-          <h2 className="text-base font-bold text-[var(--text-0)] tracking-tight">Role & Experience Calibration</h2>
+      {/* Step 2 — Role calibration */}
+      <section style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{
+            fontSize: 9, fontFamily: 'monospace', fontWeight: 700, color: T.text3,
+            backgroundColor: T.cardHov, border: `1px solid ${T.border}`,
+            padding: '4px 10px', borderRadius: 8, letterSpacing: '0.12em',
+          }}>STEP 02</span>
+          <h2 style={{ fontSize: 14, fontWeight: 700, color: T.text0, margin: 0 }}>Role & Experience Calibration</h2>
         </div>
 
-        <Card spotlight padding="lg" className="grid grid-cols-1 md:grid-cols-2 gap-8 bg-[var(--bg-1)] border border-[var(--border)]">
-          <Input 
-            label="Target Company" 
-            placeholder="e.g. Google, Meta, Stripe" 
-            value={company}
-            onChange={(e) => setCompany(e.target.value)}
-          />
-          <Input 
-            label="Target Role Title" 
-            placeholder="e.g. Senior Software Engineer" 
-            value={role}
-            onChange={(e) => setRole(e.target.value)}
-          />
-          <Select 
-            label="Difficulty Seniority"
+        <Panel style={{ padding: 24, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+          <FieldInput label="Target Company" value={company} onChange={e => setCompany(e.target.value)} placeholder="e.g. Google, Meta, Stripe" />
+          <FieldInput label="Target Role Title" value={role} onChange={e => setRole(e.target.value)} placeholder="e.g. Senior Software Engineer" />
+          <FieldSelect
+            label="Difficulty / Seniority"
             value={difficulty}
-            onChange={(e) => setDifficulty(e.target.value)}
+            onChange={e => setDifficulty(e.target.value)}
             options={[
               { value: 'easy', label: 'Entry Level (L3 / Junior SDE)' },
               { value: 'medium', label: 'Mid-Level (L4 / SDE II)' },
-              { value: 'hard', label: 'Senior / Staff (L5+ Architect)' }
+              { value: 'hard', label: 'Senior / Staff (L5+)' },
             ]}
           />
-          <Select 
-            label="Interactive Session Duration"
+          <FieldSelect
+            label="Session Duration"
             value={duration}
-            onChange={(e) => setDuration(e.target.value)}
-            options={SESSION_DURATIONS.map(d => ({ value: d.toString(), label: `${d} Minutes (Voice Interactive)` }))}
+            onChange={e => setDuration(e.target.value)}
+            options={SESSION_DURATIONS.map(d => ({ value: d.toString(), label: `${d} minutes — voice interactive` }))}
           />
-        </Card>
+        </Panel>
       </section>
 
-      {/* Bottom Action Soundstage Launcher */}
-      <Card variant="pro" spotlight className="p-6 sm:p-8 flex flex-col sm:flex-row sm:items-center justify-between gap-6 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-44 h-44 bg-[var(--accent)]/5 blur-[50px] pointer-events-none" />
-        <div className="space-y-1 relative z-10">
-          <p className="text-xs sm:text-sm text-[var(--text-1)]">
-            Configured for <strong className="text-[var(--text-0)] font-semibold">{role}</strong> at <strong className="text-[var(--text-0)] font-semibold">{company}</strong>.
-          </p>
-          <p className="text-[10px] text-[var(--text-2)] font-mono">
-            Standard simulation evaluation rubrics active • Voice socket calibration calibrated.
-          </p>
+      {/* Launch bar */}
+      <Panel style={{ padding: 24, position: 'relative', overflow: 'hidden', border: '1px solid rgba(34,197,94,0.2)' }}>
+        <div style={{ position: 'absolute', top: 0, right: 0, width: 220, height: 220, backgroundColor: 'rgba(34,197,94,0.05)', filter: 'blur(70px)', borderRadius: '50%', pointerEvents: 'none' }} />
+        <div style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 20, flexWrap: 'wrap' }}>
+          <div>
+            <p style={{ fontSize: 14, color: T.text1, margin: 0 }}>
+              Configured for{' '}
+              <strong style={{ color: T.text0 }}>{role}</strong>
+              {' '}at{' '}
+              <strong style={{ color: T.text0 }}>{company}</strong>
+            </p>
+            <p style={{ fontSize: 10, color: T.text3, fontFamily: 'monospace', marginTop: 4 }}>
+              Standard evaluation rubrics active · Voice socket calibrated
+            </p>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+            <MicLevel />
+            <button
+              onClick={handleStart}
+              disabled={isStarting}
+              style={{
+                backgroundColor: T.green, color: '#000', fontWeight: 700, fontSize: 14,
+                padding: '12px 24px', borderRadius: 12, border: 'none', cursor: 'pointer',
+                boxShadow: '0 0 40px -6px rgba(34,197,94,0.55)',
+                opacity: isStarting ? 0.7 : 1, minWidth: 160,
+                display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center',
+              }}
+            >
+              {isStarting ? 'Launching…' : 'Start Simulation →'}
+            </button>
+          </div>
         </div>
-        <div className="flex items-center gap-4 relative z-10 shrink-0">
-          <MicTester />
-          <Button size="lg" variant="primary" onClick={handleStart} className="h-11 px-8 font-bold text-xs shadow-[0_0_35px_-5px_rgba(34,197,94,0.4)]">
-            Start Simulation →
-          </Button>
-        </div>
-      </Card>
+      </Panel>
     </div>
   );
 }

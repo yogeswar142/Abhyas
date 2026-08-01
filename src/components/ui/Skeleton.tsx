@@ -14,7 +14,7 @@ export function Skeleton({
   className,
   ...props
 }: SkeletonProps) {
-  const baseStyles = 'animate-pulse bg-[var(--surface-hv)]';
+  const baseStyles = 'animate-pulse bg-[var(--v-float)]';
   
   const variants = {
     text: 'rounded-md h-4 w-full',

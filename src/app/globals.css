@@ -1,5 +1,24 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Instrument+Serif:ital@0;1&display=swap');
 @import "tailwindcss";
+
+/* ── Tailwind v4 theme extension — maps CSS tokens to utility classes ──
+   Usage: bg-green-cta, bg-green-fill, bg-green-ghost,
+          bg-surface-base, bg-surface-raised, bg-surface-float,
+          border-surface-line, text-green-cta, etc.
+   ──────────────────────────────────────────────────────────────────── */
+@theme {
+  /* ── Literal values — Tailwind v4 @theme must NOT use var() ──
+     These drive bg-green-cta, bg-surface-raised, border-surface-line etc.
+     Keep in sync with :root tokens below.                         */
+  --color-green-cta:      #22c55e;
+  --color-green-fill:     #16a34a;
+  --color-green-ghost:    rgba(34,197,94,0.12);
+
+  --color-surface-base:   #0a0b0d;
+  --color-surface-raised: #141618;   /* cards — visible lift over base  */
+  --color-surface-float:  #1e2026;   /* hover / elevated panels         */
+  --color-surface-line:   rgba(255,255,255,0.08); /* borders            */
+}
 /* ============================================================
    Abhyas — Design System
    ============================================================ */
@@ -50,45 +69,125 @@
   --ease-smooth: cubic-bezier(0.25,0.46,0.45,0.94);
 
   --nav-bg:      rgba(9,9,11,0.92);
+
+  /* ── Green palette — three tiers, same hue, different intent ───────────
+     --green-cta   : Primary actions, active nav ring, "AI ONLINE" dot
+     --green-fill  : Progress bars, readiness ring fill (slightly darker)
+     --green-ghost : Subtle card accent borders, badge backgrounds
+     ─────────────────────────────────────────────────────────────────── */
+  --green-cta:      #22c55e;
+  --green-fill:     #16a34a;
+  --green-ghost:    rgba(34,197,94,0.12);
+
+  /* ── Surface depth scale ───────────────────────────────────────────────
+     Keep in sync with @theme above.
+     ─────────────────────────────────────────────────────────────────── */
+  --surface-base:   #0a0b0d;
+  --surface-raised: #141618;
+  --surface-float:  #1e2026;
+  --surface-line:   rgba(255,255,255,0.08);
+
+  /* ── Typography utility token ─────────────────────────────────────── */
+  --font-data: 'tabular-nums';
+
+  /* ── Semantic UI tokens — used by inline-style components ───────────
+     All pages reference these via var(--v-*) so theme switching is
+     automatic. Keep dark values here; light overrides in [data-theme=light]
+     ─────────────────────────────────────────────────────────────────── */
+  --v-page:        #09090b;
+  --v-card:        #111113;
+  --v-raised:      #141618;
+  --v-float:       #1e2026;
+  --v-border:      rgba(255,255,255,0.08);
+  --v-line:        rgba(255,255,255,0.05);
+  --v-tx0:         #fafafa;
+  --v-tx1:         #a1a1aa;
+  --v-tx2:         #71717a;
+  --v-tx3:         #3f3f46;
+  --v-accent:      #22c55e;
+  --v-accent-dk:   #16a34a;
+  --v-accent-ghost:rgba(34,197,94,0.10);
+  --v-track:       rgba(255,255,255,0.06);
+  --v-hover:       rgba(255,255,255,0.04);
 }
 
+/* ── Light theme overrides ───────────────────────────────── */
+/* Applied via data-theme="light" on <html> element.          */
+[data-theme="light"],
 .light-theme {
-  /* ── Backgrounds (Zinc light scale) */
-  --bg-0:        #FAFAFA;
-  --bg-1:        #F4F4F5;
-  --bg-2:        #E4E4E7;
-  --bg-3:        #D4D4D8;
+  /* Legacy tokens — keep for Tailwind utility compat */
+  --bg-0:        #f8fafc;
+  --bg-1:        #f1f5f9;
+  --bg-2:        #e2e8f0;
+  --bg-3:        #cbd5e1;
   --surface:     rgba(0,0,0,0.03);
-  --surface-hv:  rgba(0,0,0,0.055);
-  --border:      rgba(0,0,0,0.10);
-  --border-hv:   rgba(0,0,0,0.22);
-
-  --text-0:      #09090B;
-  --text-1:      #27272A;
-  --text-2:      #52525B;
-  --text-3:      #71717A;
-
-  /* Slightly darker green for light bg contrast */
-  --accent:      #16A34A;
-  --accent-hv:   #15803D;
+  --surface-hv:  rgba(0,0,0,0.05);
+  --border:      rgba(0,0,0,0.09);
+  --border-hv:   rgba(0,0,0,0.18);
+  --text-0:      #0f172a;
+  --text-1:      #1e293b;
+  --text-2:      #475569;
+  --text-3:      #94a3b8;
+  --accent:      #16a34a;
+  --accent-hv:   #15803d;
   --accent-dim:  rgba(22,163,74,0.10);
   --accent-soft: rgba(22,163,74,0.06);
-
-  --success:     #16A34A;
-  --warning:     #D97706;
-  --error:       #DC2626;
-
+  --success:     #16a34a;
+  --warning:     #d97706;
+  --error:       #dc2626;
   --highlight:   #000000;
-
   --shadow-sm:   0 1px 3px rgba(0,0,0,0.07), 0 1px 2px rgba(0,0,0,0.04);
   --shadow:      0 4px 14px rgba(0,0,0,0.07), 0 2px 6px rgba(0,0,0,0.04);
   --shadow-lg:   0 12px 28px rgba(0,0,0,0.09), 0 4px 10px rgba(0,0,0,0.04);
+  --nav-bg:      rgba(248,250,252,0.94);
+  --green-cta:   #16a34a;
+  --green-fill:  #15803d;
+  --green-ghost: rgba(22,163,74,0.10);
+  --surface-base:  #f8fafc;
+  --surface-raised:#ffffff;
+  --surface-float: #f1f5f9;
+  --surface-line:  rgba(0,0,0,0.07);
 
-  --nav-bg:      rgba(250,250,250,0.94);
+  /* ── Semantic UI tokens — light values ──────────────────── */
+  --v-page:        #f8fafc;
+  --v-card:        #ffffff;
+  --v-raised:      #f1f5f9;
+  --v-float:       #e2e8f0;
+  --v-border:      rgba(0,0,0,0.08);
+  --v-line:        rgba(0,0,0,0.05);
+  --v-tx0:         #0f172a;
+  --v-tx1:         #334155;
+  --v-tx2:         #64748b;
+  --v-tx3:         #94a3b8;
+  --v-accent:      #16a34a;
+  --v-accent-dk:   #15803d;
+  --v-accent-ghost:rgba(22,163,74,0.10);
+  --v-track:       rgba(0,0,0,0.06);
+  --v-hover:       rgba(0,0,0,0.04);
 }
 
 /* ── Reset ───────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* ── Interactive transition defaults ─────────────────────────────────────
+   Scoped ONLY to interactive elements — never layout or text nodes.
+   Keeps animations intentional, prevents jank on paint-heavy elements.
+   ──────────────────────────────────────────────────────────────────── */
+button, a, [role="button"], [role="tab"] {
+  transition:
+    color           120ms ease,
+    background-color 120ms ease,
+    border-color    120ms ease,
+    box-shadow      120ms ease,
+    transform       120ms ease;
+}
+
+/* ── Tabular-nums utility ─────────────────────────────────────────────── */
+.num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+  letter-spacing: -0.02em;
+}
 
 html {
   scroll-behavior: smooth;
@@ -96,16 +195,24 @@ html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overflow-x: hidden;
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+/* Hide scrollbar for Chrome, Safari and Opera */
+::-webkit-scrollbar {
+  display: none;
 }
 
 body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  background: var(--bg-0);
-  color: var(--text-0);
+  background: var(--v-page, var(--bg-0));
+  color: var(--v-tx0, var(--text-0));
   line-height: 1.6;
   overflow-x: hidden;
   cursor: default;
   max-width: 100vw;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 a { text-decoration: none; color: inherit; }
@@ -733,6 +840,15 @@ img { display: block; max-width: 100%; }
 @keyframes wave {
   0%,100% { height: 3px; }
   50% { height: 18px; }
+}
+
+@keyframes waveBar {
+  from { transform: scaleY(0.35); opacity: 0.5; }
+  to   { transform: scaleY(1);   opacity: 1;   }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .waveBar-bar { animation: none !important; opacity: 0.6; }
 }
 
 .wave-label {

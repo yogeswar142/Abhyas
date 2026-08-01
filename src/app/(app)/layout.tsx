@@ -13,6 +13,7 @@ export default function AppLayout({
   children: React.ReactNode;
 }) {
   const [pinned, setPinned] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
   const { user, isLoading } = useAuth();
   const router = useRouter();
 
@@ -42,24 +43,31 @@ export default function AppLayout({
     return null;
   }
 
-  return (
-    <div className="min-h-screen bg-[var(--bg-0)] text-[var(--text-0)] font-sans antialiased selection:bg-[var(--accent-soft)] selection:text-[var(--accent)] overflow-x-hidden">
-      {/* Background radial accent glow */}
-      <div className="fixed inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(34,197,94,0.03),transparent_60%)] pointer-events-none" />
-      <div className="fixed inset-0 bg-[linear-gradient(rgba(255,255,255,0.005)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.005)_1px,transparent_1px)] [background-size:32px_32px] pointer-events-none opacity-40" />
+  const sidebarExpanded = pinned || isHovered;
 
-      <Sidebar pinned={pinned} onTogglePin={handleTogglePin} />
+  return (
+    <div className="min-h-screen font-sans antialiased overflow-x-hidden">
+      <Sidebar 
+        pinned={pinned} 
+        onTogglePin={handleTogglePin} 
+        isHovered={isHovered}
+        onHoverChange={setIsHovered}
+      />
       
       <div 
         className="transition-[margin] duration-300 ease-in-out flex flex-col min-h-screen relative z-10"
-        style={{ marginLeft: pinned ? 236 : 84 }}
+        style={{ marginLeft: pinned ? 240 : 64 }}
       >
-        <Topbar sidebarCollapsed={!pinned} onToggleSidebar={() => handleTogglePin(!pinned)} />
+        <Topbar 
+          sidebarCollapsed={!sidebarExpanded} 
+          onToggleSidebar={() => handleTogglePin(!pinned)} 
+        />
         
-        <main className="flex-1 px-8 pt-24 pb-12 transition-all duration-300">
-          <div className="max-w-7xl mx-auto">
-            {children}
-          </div>
+        <main 
+          className="flex-1 min-h-screen pb-12 transition-all duration-300"
+          style={{ paddingTop: 96, paddingLeft: 32, paddingRight: 32 }}
+        >
+          {children}
         </main>
       </div>
     </div>

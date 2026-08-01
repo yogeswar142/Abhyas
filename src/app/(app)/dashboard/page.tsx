@@ -3,288 +3,418 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/Button';
-import { Card } from '@/components/ui/Card';
-import { Badge } from '@/components/ui/Badge';
-import { mockUser, mockStats, mockSessions } from '@/lib/mock-data';
-import { formatRelativeTime, formatDuration, getScoreColor } from '@/lib/utils';
+import { mockUser, mockSessions, mockStats } from '@/lib/mock-data';
+import { formatRelativeTime, formatDuration } from '@/lib/utils';
 import { INTERVIEW_TYPES } from '@/lib/constants';
+import { DashboardSkeleton } from '@/components/skeletons/DashboardSkeleton';
 
-const SoundstageWaveform = () => {
-  const [activeBars, setActiveBars] = useState<number[]>([]);
+// ── Design tokens ─────────────────────────────────────────────────────────────
+const T = {
+  page:        'var(--v-page)',
+  card:        'var(--v-card)',
+  raised:      'var(--v-raised)',
+  float:       'var(--v-float)',
+  border:      'var(--v-border)',
+  line:        'var(--v-line)',
+  green:       'var(--v-accent)',
+  greenGhost:  'var(--v-accent-ghost)',
+  text0:       'var(--v-tx0)',
+  text1:       'var(--v-tx1)',
+  text2:       'var(--v-tx2)',
+  text3:       'var(--v-tx3)',
+  track:       'var(--v-track)',
+  hover:       'var(--v-hover)',
+} as const;
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setActiveBars(
-        Array.from({ length: 18 }).map(() => Math.floor(Math.random() * 26) + 6)
-      );
-    }, 180);
-    return () => clearInterval(interval);
-  }, []);
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function scoreCol(s: number) {
+  return s >= 85 ? T.green : s >= 70 ? '#eab308' : '#f97316';
+}
 
-  return (
-    <div className="flex items-center gap-1 h-12 px-4 bg-[var(--accent-soft)] rounded-2xl border border-[rgba(34,197,94,0.12)]">
-      <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-ping shrink-0" />
-      <div className="flex items-end gap-[3px] h-8 w-44 px-2 overflow-hidden">
-        {activeBars.map((height, idx) => (
-          <span
-            key={idx}
-            className="w-[3px] bg-gradient-to-t from-[var(--accent)] to-emerald-400 rounded-full transition-all duration-150"
-            style={{ height: `${height}px` }}
-          />
-        ))}
-      </div>
-      <span className="text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--accent)] shrink-0 hidden sm:inline">AI Calibrated</span>
-    </div>
-  );
+const sL: React.CSSProperties = {
+  fontSize: 11,
+  fontWeight: 500,
+  color: T.text2,
+  letterSpacing: '0.01em',
 };
 
-export default function DashboardPage() {
-  const router = useRouter();
-  const [ringOffset, setRingOffset] = useState(376.99); // Circumference for r=60
-  
-  // Calculate average scores across mockSessions
-  const completedSessions = mockSessions.filter(s => s.status === 'completed');
-  const avgOverall = Math.round(
-    completedSessions.reduce((acc, s) => acc + s.scores.overall, 0) / completedSessions.length
+// ── Panel ────────────────────────────────────────────────────────────────────
+function Panel({ children, style, hoverable = false }: { children: React.ReactNode; style?: React.CSSProperties, hoverable?: boolean }) {
+  return (
+    <div 
+      style={{
+        backgroundColor: T.card,
+        border: `1px solid ${T.border}`,
+        borderRadius: 8,
+        transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
+        ...style,
+      }}
+      onMouseEnter={e => {
+        if (hoverable) {
+          e.currentTarget.style.borderColor = 'var(--v-tx3)';
+          e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.05)';
+        }
+      }}
+      onMouseLeave={e => {
+        if (hoverable) {
+          e.currentTarget.style.borderColor = T.border;
+          e.currentTarget.style.boxShadow = 'none';
+        }
+      }}
+    >
+      {children}
+    </div>
   );
+}
 
-  useEffect(() => {
-    // Smooth transition trigger for SVG circular ring
-    const timer = setTimeout(() => {
-      const circumference = 2 * Math.PI * 60;
-      setRingOffset(circumference - (circumference * avgOverall) / 100);
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [avgOverall]);
+// ── Sparkline ────────────────────────────────────────────────────────────────
+function Sparkline({ data, color }: { data: number[], color: string }) {
+  const max = Math.max(...data);
+  const min = Math.min(...data);
+  const range = max - min || 1;
+  const pts = data.map((d, i) => {
+    const x = (i / (data.length - 1)) * 100;
+    const y = 100 - ((d - min) / range) * 100;
+    return `${x},${y}`;
+  }).join(' ');
 
   return (
-    <div className="space-y-12 pb-16">
-      {/* Editorial Welcome Header */}
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 border-b border-[var(--border)]/40 pb-6">
-        <div className="space-y-1.5">
-          <span className="text-[10px] font-mono tracking-widest text-[var(--accent)] uppercase font-bold">
-            Dashboard HUD • Calibrated
-          </span>
-          <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-[var(--text-0)]">
-            Good morning, Yogeswar.
-          </h1>
-          <p className="text-xs sm:text-sm text-[var(--text-2)] max-w-xl">
-            Targeting <span className="text-[var(--text-0)] font-semibold">{mockUser.targetCompany}</span> • <span className="text-[var(--text-0)] font-semibold">{mockUser.targetRole}</span> track.
-          </p>
-        </div>
+    <svg viewBox="0 -10 100 120" preserveAspectRatio="none" style={{ width: '100%', height: 32, overflow: 'visible' }}>
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
 
-        <div className="flex items-center gap-3">
-          <Link href="/interview/new">
-            <Button variant="primary" size="sm" className="h-9 px-5 text-xs font-bold shadow-[0_0_30px_-5px_rgba(34,197,94,0.3)] gap-1.5">
-              <span>Start Voice Session</span>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-            </Button>
-          </Link>
+// ── Readiness Ring ───────────────────────────────────────────────────────────
+function ReadinessRing({ score, circ, offset }: { score: number; circ: number; offset: number }) {
+  return (
+    <div style={{ position: 'relative', width: 96, height: 96, flexShrink: 0 }}>
+      <svg width="96" height="96" viewBox="0 0 96 96" style={{ transform: 'rotate(-90deg)' }}>
+        <circle cx="48" cy="48" r="42" fill="none" strokeWidth="6" style={{ stroke: T.track }} />
+        <circle
+          cx="48" cy="48" r="42"
+          fill="none" strokeWidth="6"
+          strokeLinecap="round"
+          strokeDasharray={circ}
+          strokeDashoffset={offset}
+          style={{ stroke: scoreCol(score), transition: 'stroke-dashoffset 1.2s cubic-bezier(0.22, 1, 0.36, 1)' }}
+        />
+      </svg>
+      <div style={{
+        position: 'absolute', inset: 0,
+        display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center',
+      }}>
+        <span style={{
+          fontSize: 26, fontWeight: 700,
+          lineHeight: 1, fontVariantNumeric: 'tabular-nums',
+          color: T.text0, letterSpacing: '-0.03em'
+        }}>{score}</span>
+      </div>
+    </div>
+  );
+}
+
+// ── Page ─────────────────────────────────────────────────────────────────────
+export default function DashboardPage() {
+  const router = useRouter();
+  const [mounted, setMounted] = useState(false);
+  const [launching, setLaunching] = useState(false);
+  const [ringOff, setRingOff] = useState(0);
+
+  const completed = mockSessions.filter(s => s.status === 'completed');
+  const avg = (key: string) =>
+    Math.round(completed.reduce((a, s) => a + (s.scores as any)[key], 0) / (completed.length || 1));
+  const avgOverall = avg('overall');
+
+  const R = 42;
+  const CIRC = 2 * Math.PI * R;
+
+  useEffect(() => { setMounted(true); }, []);
+  useEffect(() => {
+    if (!mounted) return;
+    setRingOff(CIRC);
+    const t = setTimeout(() => setRingOff(CIRC - (CIRC * avgOverall) / 100), 200);
+    return () => clearTimeout(t);
+  }, [mounted, avgOverall, CIRC]);
+
+  const launch = async () => {
+    setLaunching(true);
+    await new Promise(r => setTimeout(r, 500));
+    router.push('/interview/new');
+  };
+
+  if (!mounted) return <DashboardSkeleton />;
+
+  // Mock trend data
+  const trendData1 = [40, 55, 45, 70, 65, 85, 79];
+  const trendData2 = [2, 3, 2, 5, 4, 7, 12];
+  const trendData3 = [1, 2, 2.5, 4, 8, 15, 24.5];
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 24, width: '100%', paddingBottom: 64 }}>
+      
+      {/* ── HERO (Vercel Style) ── */}
+      <Panel style={{ overflow: 'hidden', position: 'relative' }}>
+        {/* Subtle dot grid pattern via radial gradient */}
+        <div style={{
+          position: 'absolute', inset: 0,
+          backgroundImage: 'radial-gradient(var(--v-tx3) 1px, transparent 1px)',
+          backgroundSize: '24px 24px',
+          opacity: 0.15,
+          pointerEvents: 'none'
+        }} />
+        <div style={{
+          position: 'absolute', inset: 0,
+          background: 'linear-gradient(to bottom right, var(--v-card) 20%, transparent, var(--v-card) 80%)',
+          pointerEvents: 'none'
+        }} />
+
+        <div style={{
+          position: 'relative',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          flexWrap: 'wrap', gap: 24,
+          padding: '40px 32px',
+        }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0, flex: 1 }}>
+            <h1 style={{
+              fontSize: 'clamp(2rem, 4vw, 2.5rem)',
+              fontWeight: 700,
+              letterSpacing: '-0.04em',
+              color: T.text0,
+              lineHeight: 1.1,
+              margin: 0,
+            }}>
+              Ready for your next interview?
+            </h1>
+            <p style={{ fontSize: 15, color: T.text2, margin: 0, maxWidth: 500, lineHeight: 1.5 }}>
+              Targeting <strong style={{ color: T.text0, fontWeight: 500 }}>{mockUser.targetCompany}</strong> as a <strong style={{ color: T.text0, fontWeight: 500 }}>{mockUser.targetRole}</strong>. 
+              Your current readiness score is tracking in the top 12% of candidates.
+            </p>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 12, flexShrink: 0 }}>
+            <button
+              onClick={launch}
+              disabled={launching}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                backgroundColor: T.text0,
+                color: T.page,
+                fontWeight: 600, fontSize: 14,
+                padding: '0 24px', height: 44,
+                borderRadius: 6, border: 'none', cursor: launching ? 'wait' : 'pointer',
+                transition: 'transform 0.1s ease, opacity 0.2s ease',
+                minWidth: 160, justifyContent: 'center',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                opacity: launching ? 0.7 : 1
+              }}
+              onMouseEnter={e => { if (!launching) e.currentTarget.style.opacity = '0.9'; }}
+              onMouseLeave={e => { if (!launching) e.currentTarget.style.opacity = '1'; }}
+            >
+              {launching ? (
+                <div style={{ width: 16, height: 16, border: `2px solid ${T.page}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+              ) : 'Start Interview'}
+            </button>
+            <style dangerouslySetInnerHTML={{__html: `@keyframes spin { to { transform: rotate(360deg); } }`}} />
+          </div>
         </div>
+      </Panel>
+
+      {/* ── METRICS STRIP ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 24 }}>
+        <Panel style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }} hoverable>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={sL}>Total Sessions</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.text3} strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: 32, fontWeight: 700, letterSpacing: '-0.04em', color: T.text0, lineHeight: 1 }}>42</span>
+            <div style={{ width: 80 }}><Sparkline data={trendData1} color={T.text3} /></div>
+          </div>
+        </Panel>
+
+        <Panel style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }} hoverable>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={sL}>Readiness Score</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={scoreCol(avgOverall)} strokeWidth="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: 32, fontWeight: 700, letterSpacing: '-0.04em', color: T.text0, lineHeight: 1 }}>
+              {avgOverall}<span style={{ fontSize: 16, color: T.text2, fontWeight: 500 }}>%</span>
+            </span>
+            <div style={{ width: 80 }}><Sparkline data={trendData1} color={scoreCol(avgOverall)} /></div>
+          </div>
+        </Panel>
+
+        <Panel style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }} hoverable>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={sL}>Active Streak</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2"><path d="M17.5 19c2.5-2 2.5-6 0-8-1.5-1.5-2-4-2-4s-1 3-3 4c-2.5 1.5-3 5-1 7.5a6.5 6.5 0 0 0 6 0z"/></svg>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: 32, fontWeight: 700, letterSpacing: '-0.04em', color: T.text0, lineHeight: 1 }}>
+              {mockStats.bestStreak}<span style={{ fontSize: 16, color: T.text2, fontWeight: 500 }}>d</span>
+            </span>
+            <div style={{ width: 80 }}><Sparkline data={trendData2} color="#f59e0b" /></div>
+          </div>
+        </Panel>
+
+        <Panel style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }} hoverable>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={sL}>Practice Time</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.text3} strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: 32, fontWeight: 700, letterSpacing: '-0.04em', color: T.text0, lineHeight: 1 }}>
+              {mockStats.totalHours}<span style={{ fontSize: 16, color: T.text2, fontWeight: 500 }}>h</span>
+            </span>
+            <div style={{ width: 80 }}><Sparkline data={trendData3} color={T.text3} /></div>
+          </div>
+        </Panel>
       </div>
 
-      {/* Asymmetric Core Workspace Stage */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+      {/* ── MAIN CONTENT GRID ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 24, alignItems: 'start' }}>
         
-        {/* Left Primary Workspace (70%) */}
-        <div className="lg:col-span-2 space-y-10">
-          
-          {/* Interactive Soundstage Hero Banner */}
-          <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[var(--bg-1)] via-[var(--bg-2)] to-[var(--bg-1)] border border-[var(--border)] p-6 sm:p-8 group shadow-[var(--shadow)]">
-            <div className="absolute top-0 right-0 w-80 h-80 bg-[var(--accent)]/5 blur-[100px] rounded-full pointer-events-none transition-opacity duration-500 group-hover:opacity-80" />
-            
-            <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-8">
-              <div className="space-y-4 max-w-xl">
-                <span className="inline-flex items-center gap-2 bg-[var(--accent-soft)] border border-[rgba(34,197,94,0.2)] rounded-full px-3 py-1 text-[10px] text-[var(--accent)] font-semibold tracking-wider uppercase">
-                  <span className="w-1.5 h-1.5 bg-[var(--accent)] rounded-full animate-ping" />
-                  Recommended Practice Stage
-                </span>
-                <h2 className="text-2xl sm:text-3xl font-extrabold text-[var(--text-0)] tracking-tight leading-tight">
-                  Master System Architecture for <span className="italic font-serif text-[var(--accent)] font-normal">Google L5</span> Rounds
-                </h2>
-                <p className="text-xs sm:text-sm text-[var(--text-2)] leading-relaxed">
-                  Practice scalability trade-offs, database replication bottlenecks, and caching topologies. Receive instant transcript feedback.
-                </p>
+        {/* ── LEFT: RECENT SESSIONS ── */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <h2 style={{ fontSize: 16, fontWeight: 600, color: T.text0, margin: 0 }}>Recent Simulations</h2>
+            <Link href="/reports" style={{ fontSize: 13, color: T.text2, textDecoration: 'none' }} onMouseEnter={e => e.currentTarget.style.color = T.text0} onMouseLeave={e => e.currentTarget.style.color = T.text2}>
+              View all →
+            </Link>
+          </div>
+
+          <Panel style={{ overflow: 'hidden' }}>
+            {completed.length === 0 ? (
+              <div style={{ padding: 40, textAlign: 'center' }}>
+                <p style={{ color: T.text2, fontSize: 14 }}>No sessions completed yet.</p>
               </div>
-
-              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 shrink-0">
-                <SoundstageWaveform />
-                <Link href="/interview/new">
-                  <Button variant="primary" size="md" className="h-10 px-6 text-xs font-bold shadow-[0_0_20px_rgba(34,197,94,0.2)]">
-                    Launch Simulator
-                  </Button>
-                </Link>
-              </div>
-            </div>
-          </section>
-
-          {/* Readiness Index & Metric Rings */}
-          <section className="space-y-4">
-            <h2 className="text-[11px] font-mono uppercase tracking-wider font-bold text-[var(--text-2)]">Readiness Index Evaluation</h2>
-            
-            <Card variant="default" padding="lg" spotlight className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center bg-[var(--bg-1)]">
-              {/* Circular Gauge Ring */}
-              <div className="flex flex-col items-center justify-center border-b md:border-b-0 md:border-r border-[var(--border)]/40 pb-6 md:pb-0 md:pr-8">
-                <div className="relative w-36 h-36 flex items-center justify-center">
-                  <svg className="w-full h-full -rotate-90">
-                    <circle cx="72" cy="72" r="60" className="stroke-[var(--border)] fill-none stroke-8" />
-                    <circle 
-                      cx="72" 
-                      cy="72" 
-                      r="60" 
-                      className="stroke-[var(--accent)] fill-none stroke-8 transition-all duration-1000 ease-out" 
-                      strokeDasharray={2 * Math.PI * 60}
-                      strokeDashoffset={ringOffset}
-                      strokeLinecap="round"
-                    />
-                  </svg>
-                  <div className="absolute text-center space-y-0.5">
-                    <span className="text-3xl font-extrabold text-[var(--text-0)] font-mono tracking-tighter">{avgOverall}%</span>
-                    <p className="text-[10px] font-mono text-[var(--text-2)] uppercase font-semibold">Readiness</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Rubric Benchmark feedback */}
-              <div className="space-y-4">
-                <div className="space-y-1">
-                  <h3 className="font-bold text-base text-[var(--text-0)]">Top 12% Candidate Benchmark</h3>
-                  <p className="text-xs text-[var(--text-2)] leading-relaxed">
-                    Based on your mock history, your answers match Google L5 engineering rubric metrics. Focus on deepening depth score parameter to exceed target thresholds.
-                  </p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="bg-[var(--accent-soft)] border border-[rgba(34,197,94,0.15)] px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold text-[var(--accent)]">
-                    +4.2% Growth Velocity
-                  </div>
-                  <div className="bg-[var(--bg-2)] border border-[var(--border)] px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold text-[var(--text-1)]">
-                    12 Active Streak 🔥
-                  </div>
-                </div>
-              </div>
-            </Card>
-          </section>
-
-          {/* Minimalist Simulation Timeline History */}
-          <section className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-[11px] font-mono uppercase tracking-wider font-bold text-[var(--text-2)]">Simulation Timeline History</h2>
-              <Link href="/reports" className="text-xs text-[var(--accent)] font-semibold hover:underline flex items-center gap-1">
-                Full analytics hub <span>→</span>
-              </Link>
-            </div>
-
-            <Card padding="none" spotlight className="overflow-hidden border border-[var(--border)]">
-              <div className="divide-y divide-[var(--border)]/40">
-                {mockSessions.slice(0, 3).map(session => (
-                  <div 
-                    key={session.id} 
-                    className="p-5 flex items-center justify-between hover:bg-[var(--surface-hv)] transition-all duration-200 group"
-                  >
-                    <div className="flex items-center gap-4">
-                      {/* Circle Status indicator */}
-                      <span 
-                        className="w-2.5 h-2.5 rounded-full ring-4 ring-black/40" 
-                        style={{ backgroundColor: getScoreColor(session.scores.overall) }}
-                      />
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <p className="text-xs font-bold text-[var(--text-0)] group-hover:text-[var(--accent)] transition-colors">
-                            {session.company} • {session.role}
-                          </p>
-                          <Badge variant="muted" size="sm" className="text-[9px] uppercase tracking-wider font-mono">
-                            {INTERVIEW_TYPES.find(t => t.id === session.type)?.label || session.type}
-                          </Badge>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                {completed.slice(0, 5).map((session, idx) => {
+                  const score = session.scores.overall;
+                  const typeLabel = INTERVIEW_TYPES.find(t => t.id === session.type)?.label ?? session.type;
+                  
+                  return (
+                    <div
+                      key={session.id}
+                      style={{
+                        display: 'grid', gridTemplateColumns: '1fr auto auto',
+                        alignItems: 'center', padding: '16px 20px', gap: 16,
+                        borderBottom: idx < Math.min(completed.length, 5) - 1 ? `1px solid ${T.line}` : 'none',
+                        transition: 'background 0.15s ease',
+                      }}
+                      onMouseEnter={e => (e.currentTarget.style.backgroundColor = T.hover)}
+                      onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
+                    >
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 14, fontWeight: 500, color: T.text0 }}>
+                            {session.company}
+                          </span>
+                          <span style={{ fontSize: 13, color: T.text2 }}>· {session.role}</span>
                         </div>
-                        <p className="text-[10px] text-[var(--text-2)] font-mono mt-0.5">
-                          {formatRelativeTime(session.date)} • {formatDuration(session.duration)}
-                        </p>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 12, color: T.text3 }}>{formatRelativeTime(session.date)}</span>
+                          <span style={{ width: 4, height: 4, borderRadius: '50%', backgroundColor: T.line }} />
+                          <span style={{ fontSize: 12, color: T.text3 }}>{formatDuration(session.duration)}</span>
+                          <span style={{ width: 4, height: 4, borderRadius: '50%', backgroundColor: T.line }} />
+                          <span style={{ 
+                            fontSize: 11, fontWeight: 500, color: T.text2, 
+                            backgroundColor: T.raised, padding: '2px 6px', borderRadius: 4 
+                          }}>
+                            {typeLabel}
+                          </span>
+                        </div>
                       </div>
-                    </div>
 
-                    <div className="flex items-center gap-4">
-                      <div className="text-right">
-                        <span className="text-xs font-bold font-mono text-[var(--text-0)]">{session.scores.overall}/100</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 60, justifyContent: 'flex-end' }}>
+                        <span style={{ fontSize: 16, fontWeight: 600, color: scoreCol(score), fontVariantNumeric: 'tabular-nums' }}>
+                          {score}
+                        </span>
                       </div>
-                      <Link 
-                        href={`/interview/${session.id}`} 
-                        className="text-xs text-[var(--text-1)] group-hover:text-[var(--accent)] transition-colors flex items-center gap-1 font-semibold"
-                      >
-                        <span>Review</span>
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+
+                      <Link href={`/interview/${session.id}`}>
+                        <button style={{
+                          fontSize: 12, fontWeight: 500, color: T.text0,
+                          backgroundColor: T.raised, border: `1px solid ${T.border}`,
+                          padding: '6px 12px', borderRadius: 6, cursor: 'pointer',
+                          transition: 'background 0.15s ease'
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.backgroundColor = T.hover}
+                        onMouseLeave={e => e.currentTarget.style.backgroundColor = T.raised}
+                        >
+                          Review
+                        </button>
                       </Link>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </Panel>
+        </div>
+
+        {/* ── RIGHT: ANALYSIS & QUICK ACTIONS ── */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+          
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <h2 style={{ fontSize: 16, fontWeight: 600, color: T.text0, margin: 0 }}>Skill Analysis</h2>
+            <Panel style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 24 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+                <ReadinessRing score={avgOverall} circ={CIRC} offset={ringOff} />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <span style={{ fontSize: 13, color: T.text1, fontWeight: 500 }}>Overall Readiness</span>
+                  <span style={{ fontSize: 13, color: T.green, fontWeight: 500 }}>Top 12% Cohort</span>
+                </div>
+              </div>
+              
+              <div style={{ width: '100%', height: 1, backgroundColor: T.line }} />
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {[
+                  { label: 'Clarity',    val: avg('clarity') },
+                  { label: 'Structure',  val: avg('structure') },
+                  { label: 'Confidence', val: avg('confidence') },
+                  { label: 'Depth',      val: avg('depth') },
+                ].map(skill => (
+                  <div key={skill.label} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: 12, color: T.text1 }}>{skill.label}</span>
+                      <span style={{ fontSize: 12, color: T.text2, fontVariantNumeric: 'tabular-nums' }}>{skill.val}%</span>
+                    </div>
+                    <div style={{ height: 4, borderRadius: 2, backgroundColor: T.track, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${skill.val}%`, backgroundColor: T.text0, borderRadius: 2 }} />
                     </div>
                   </div>
                 ))}
               </div>
-            </Card>
-          </section>
+            </Panel>
+          </div>
 
-        </div>
-
-        {/* Right Sidebar Stage (30%) */}
-        <div className="space-y-8">
-          
-          {/* Calibrated Criteria Details */}
-          <section className="space-y-4">
-            <h2 className="text-[11px] font-mono uppercase tracking-wider font-bold text-[var(--text-2)]">Calibrated Criteria</h2>
-            
-            <Card spotlight padding="md" className="space-y-5 bg-[var(--bg-1)] border border-[var(--border)]">
-              {['clarity', 'structure', 'confidence', 'depth'].map(skill => {
-                const avg = Math.round(completedSessions.reduce((acc, s) => acc + (s.scores as any)[skill], 0) / completedSessions.length);
-                return (
-                  <div key={skill} className="space-y-2">
-                    <div className="flex justify-between text-xs font-mono font-medium">
-                      <span className="capitalize text-[var(--text-1)]">{skill}</span>
-                      <span className="font-bold text-[var(--text-0)]">{avg}%</span>
-                    </div>
-                    <div className="h-1 bg-[var(--bg-2)] border border-[var(--border)]/40 rounded-full overflow-hidden">
-                      <div 
-                        className="h-full rounded-full transition-all duration-700 ease-out" 
-                        style={{ width: `${avg}%`, backgroundColor: getScoreColor(avg) }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </Card>
-          </section>
-
-          {/* Quick Domain Launcher Dock */}
-          <section className="space-y-4">
-            <h2 className="text-[11px] font-mono uppercase tracking-wider font-bold text-[var(--text-2)]">Practice Soundstage Dock</h2>
-            
-            <div className="flex flex-col gap-3">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <h2 style={{ fontSize: 16, fontWeight: 600, color: T.text0, margin: 0 }}>Quick Actions</h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {[
-                { title: 'Behavioral STAR', desc: 'Situational & leadership stories.', color: 'border-l-emerald-500' },
-                { title: 'System Architecture', desc: 'Trade-off & scalability structures.', color: 'border-l-indigo-500' },
-                { title: 'Custom JD calibration', desc: 'Calibrate via job requirements.', color: 'border-l-amber-500' }
-              ].map((mod, i) => (
-                <Card 
-                  key={i} 
-                  spotlight 
-                  padding="sm" 
-                  hoverable 
-                  className={`border-l-2 ${mod.color} bg-[var(--bg-1)] hover:border-r hover:border-r-[var(--border-hv)] transition-all duration-200`}
-                  onClick={() => router.push('/interview/new')}
-                >
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <h4 className="text-xs font-bold text-[var(--text-0)]">{mod.title}</h4>
-                      <p className="text-[10px] text-[var(--text-2)] leading-tight mt-0.5">{mod.desc}</p>
-                    </div>
-                    <svg className="w-4 h-4 text-[var(--text-3)]" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                { label: 'New Behavioral Mock', icon: 'M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z M19 10v2a7 7 0 0 1-14 0v-2 M12 19v3' },
+                { label: 'System Design Drill', icon: 'M4 22h14a2 2 0 0 0 2-2V7.5L14.5 2H6a2 2 0 0 0-2 2v4 M14 2v6h6 M2 15h10 M2 18h10' },
+                { label: 'Review Past Feedback', icon: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6 M16 13H8 M16 17H8 M10 9H8' },
+              ].map(action => (
+                <Panel key={action.label} hoverable style={{ padding: '12px 16px', cursor: 'pointer' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.text2} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d={action.icon} />
                     </svg>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: T.text1 }}>{action.label}</span>
                   </div>
-                </Card>
+                </Panel>
               ))}
             </div>
-          </section>
+          </div>
 
         </div>
-
       </div>
     </div>
   );
