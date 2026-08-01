@@ -255,6 +255,124 @@ refactor: move session logic to service layer
 
 ---
 
+## Design System
+
+All UI work on Abhyas must follow this design system exactly. The goal is a design that feels like **Linear, Stripe, or Notion** — premium, intentional, and monochrome with a single green accent. Not an "AI startup" landing page.
+
+### Color Tokens (`src/app/globals.css`)
+
+All values are defined as CSS custom properties in `:root` and `.light-theme`. **Never hardcode hex values in components** — always use the token.
+
+#### Dark Mode (default)
+| Token | Value | Usage |
+|---|---|---|
+| `--bg-0` | `#09090B` | Page background |
+| `--bg-1` | `#111113` | Section alternates, nav |
+| `--bg-2` | `#18181B` | Cards, inputs |
+| `--bg-3` | `#27272A` | Elevated cards, active states |
+| `--surface` | `rgba(255,255,255,0.03)` | Subtle surface overlays |
+| `--surface-hv` | `rgba(255,255,255,0.055)` | Hover surface overlays |
+| `--border` | `rgba(255,255,255,0.08)` | Default borders |
+| `--border-hv` | `rgba(255,255,255,0.15)` | Hover / focus borders |
+| `--text-0` | `#FAFAFA` | Primary text, headings |
+| `--text-1` | `#A1A1AA` | Secondary text, subheadings |
+| `--text-2` | `#71717A` | Muted labels, descriptions |
+| `--text-3` | `#3F3F46` | Disabled, placeholders |
+| `--accent` | `#22C55E` | **Primary CTA only** |
+| `--accent-hv` | `#16A34A` | Hover state for accent |
+| `--accent-dim` | `rgba(34,197,94,0.10)` | Glow / shadow on accent |
+| `--accent-soft` | `rgba(34,197,94,0.06)` | Tinted backgrounds |
+| `--success` | `#22C55E` | Success states |
+| `--warning` | `#F59E0B` | Warning states |
+| `--error` | `#EF4444` | Error states |
+
+#### Light Mode overrides (`.light-theme`)
+| Token | Value |
+|---|---|
+| `--bg-0` | `#FAFAFA` |
+| `--bg-1` | `#F4F4F5` |
+| `--bg-2` | `#E4E4E7` |
+| `--bg-3` | `#D4D4D8` |
+| `--text-0` | `#09090B` |
+| `--text-1` | `#27272A` |
+| `--text-2` | `#52525B` |
+| `--text-3` | `#71717A` |
+| `--accent` | `#16A34A` *(darker for contrast on white)* |
+| `--accent-hv` | `#15803D` |
+
+### Gradient
+Only two gradient uses are permitted:
+1. **Hero headline italic word** — `linear-gradient(135deg, #22C55E 0%, #14B8A6 100%)`
+2. **CTA section `<em>` word** — same gradient
+
+No other gradient backgrounds, borders, or text in the entire UI.
+
+### Typography
+- **Font**: `Inter` (weights 400, 500, 600, 700, 800) for all UI text
+- **Accent font**: `Instrument Serif` italic — used only for the hero headline word and CTA `<em>` word
+- **Heading scale**: `clamp()` based — see `.hero-headline` and `.section-headline` in CSS
+- **Line height**: 1.6 for body, 1.07–1.1 for headings, 1.7 for descriptions
+- **Letter spacing**: `-0.04em` for large headings, `-0.025em` for card titles, `0.08–0.12em` for eyebrows/labels
+
+### Spacing & Radius
+| Token | Value | Usage |
+|---|---|---|
+| `--radius-sm` | `6px` | Buttons, tags, small chips |
+| `--radius` | `12px` | Cards, inputs |
+| `--radius-lg` | `18px` | Hero cards, modals |
+| `--radius-xl` | `28px` | Large containers |
+
+Section padding: `8rem 2rem` desktop, `4–5rem 1.25rem` mobile.
+
+### Component Rules
+
+**Buttons:**
+- Primary CTA: `background: var(--accent)`, `color: #ffffff`, pill or rounded-sm
+- Ghost: `color: var(--text-2)`, no background, hover reveals `var(--surface-hv)`
+- Never use gradient backgrounds on buttons
+
+**Cards:**
+- Background: `var(--bg-1)` or `var(--bg-2)`
+- Border: `1px solid var(--border)`
+- Hover: `border-color: var(--border-hv)`, `transform: translateY(-2px)`
+- No box-shadow glow effects — use subtle `var(--shadow)` only
+
+**Status / Live indicators:**
+- Use `var(--accent)` (green) for "live", "active", "success" dots — this is the only semantic use of color outside of CTAs
+- Error states: `var(--error)` (#EF4444)
+- Warnings: `var(--warning)` (#F59E0B)
+
+**Section eyebrows (labels above headings):**
+- `font-size: 0.72rem`, `font-weight: 600`, `letter-spacing: 0.12em`, `text-transform: uppercase`, `color: var(--text-3)`
+
+### Design Anti-Patterns — Never Do These
+
+- **No purple** (`#7c3aed`, `#8b5cf6`, `#a78bfa`) anywhere in the UI
+- **No purple → blue → cyan gradients** — this is the #1 "AI startup" signal
+- **No pink** (`#ec4899`, `#f43f5e`) in the design
+- **No per-element rainbow coloring** — e.g. step 1 purple, step 2 blue, step 3 pink
+- **No glowing box-shadows** in purple/blue (`0 0 15px rgba(124,58,237,0.4)`)
+- **No gradient clip-text** except the two permitted gradient uses above
+- **No gradient backgrounds on buttons, cards, or badges** other than the hero/CTA text
+- **No scroll progress bars in multiple colors** — use `bg-white/20`
+- **No AI orb** (the generic purple→blue→cyan glowing sphere used on every AI landing page)
+- **Don't add color to sections just to distinguish them** — use typography hierarchy instead
+
+### The Rule of One Accent
+The green `#22C55E` appears in:
+1. Primary CTA buttons ("Begin your practice", "Start Pro trial", etc.)
+2. The hero italic headline word
+3. The CTA section `<em>` word  
+4. Status dots (live session indicator)
+5. Score bar fill
+6. Active tag states (selected interview type)
+7. The Pro pricing card border (subtle: `rgba(34,197,94,0.28)`)
+8. The plan badge on the Pro card
+
+Everywhere else is zinc neutral. If you're tempted to add green somewhere else, **don't**.
+
+---
+
 ## What not to do
 
 - Don't add abstraction layers you don't need yet.
@@ -263,3 +381,4 @@ refactor: move session logic to service layer
 - Don't use `TODO` comments as a substitute for a GitHub issue.
 - Don't ship a feature without error states.
 - Don't log sensitive user data (email, full transcript content in plain text).
+- Don't introduce new colors outside the design system tokens above.

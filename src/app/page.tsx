@@ -22,7 +22,7 @@ const ScrollProgress = () => {
   return (
     <div
       style={{ width }}
-      className="fixed top-[64px] left-0 h-[2px] bg-gradient-to-r from-violet-500 via-blue-500 to-pink-500 z-[101] transition-[width] duration-75 ease-out"
+      className="fixed top-[64px] left-0 h-[2px] bg-white/20 z-[101] transition-[width] duration-75 ease-out"
     />
   )
 }
@@ -492,10 +492,12 @@ export default function Home() {
                         <div className="orb-ring orb-ring-2 animate-orb-r2"></div>
                         <div className="orb-ring orb-ring-3 animate-orb-r3"></div>
                         <div className="orb-core animate-orb-core">
-                          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                            <circle cx="12" cy="12" r="5" fill="white" opacity="0.95" />
-                            <circle cx="12" cy="12" r="9" stroke="white" strokeWidth="1" opacity="0.3" />
-                            <circle cx="12" cy="12" r="11" stroke="white" strokeWidth="0.5" opacity="0.15" />
+                          {/* Microphone — brand-specific, interview-relevant */}
+                          <svg width="14" height="18" viewBox="0 0 14 18" fill="none">
+                            <rect x="3.5" y="0.75" width="7" height="10" rx="3.5" stroke="white" strokeWidth="1.2" opacity="0.85"/>
+                            <path d="M0.75 8.5c0 3.452 2.798 6.25 6.25 6.25S13.25 11.952 13.25 8.5" stroke="white" strokeWidth="1.2" strokeLinecap="round" opacity="0.6"/>
+                            <line x1="7" y1="14.75" x2="7" y2="17.25" stroke="white" strokeWidth="1.2" strokeLinecap="round" opacity="0.45"/>
+                            <line x1="4.5" y1="17.25" x2="9.5" y2="17.25" stroke="white" strokeWidth="1.2" strokeLinecap="round" opacity="0.45"/>
                           </svg>
                         </div>
                       </div>
