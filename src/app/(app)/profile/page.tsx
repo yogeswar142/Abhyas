@@ -1,8 +1,10 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { mockUser, mockStats } from '@/lib/mock-data';
+import React, { useState, useEffect, useMemo } from 'react';
 import { ProfileSkeleton } from '@/components/skeletons/ProfileSkeleton';
+import { useAuth } from '@/contexts/AuthContext';
+import { createClient } from '@/lib/supabase/client';
+import type { Session, InterviewType, SessionStatus } from '@/types';
 
 const T = {
   card: 'var(--v-card)', cardHov: 'var(--v-raised)', border: 'var(--v-border)',
@@ -44,27 +46,137 @@ function FieldInput({ label, value, onChange }: {
   );
 }
 
+function mapInterviewToSession(row: any): Session {
+  return {
+    id: row.id,
+    type: row.type as InterviewType,
+    company: row.company,
+    role: row.role,
+    date: row.created_at,
+    duration: row.duration,
+    status: row.status as SessionStatus,
+    scores: {
+      clarity: row.score_clarity || 0,
+      structure: row.score_structure || 0,
+      confidence: row.score_confidence || 0,
+      depth: row.score_depth || 0,
+      overall: Number(row.score_overall || 0),
+    },
+    feedback: row.feedback || undefined,
+    questionsAsked: row.questions_asked || 0,
+  };
+}
+
 export default function ProfilePage() {
+  const { user, profile, refreshProfile, isLoading: authLoading } = useAuth();
+  const supabase = useMemo(() => createClient(), []);
+
   const [mounted, setMounted] = useState(false);
   const [editingTarget, setEditingTarget] = useState(false);
-  const [targetCompany, setTargetCompany] = useState(mockUser.targetCompany || '');
-  const [targetRole, setTargetRole] = useState(mockUser.targetRole || '');
+  const [targetCompany, setTargetCompany] = useState('');
+  const [targetRole, setTargetRole] = useState('');
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [loadingSessions, setLoadingSessions] = useState(true);
 
   useEffect(() => { setMounted(true); }, []);
-  if (!mounted) return <ProfileSkeleton />;
+
+  // Initialize targets from profile
+  useEffect(() => {
+    if (profile) {
+      setTargetCompany(profile.target_company || '');
+      setTargetRole(profile.target_role || '');
+    }
+  }, [profile]);
+
+  // Fetch user interviews history for real statistics
+  useEffect(() => {
+    if (!user) {
+      if (!authLoading) setLoadingSessions(false);
+      return;
+    }
+    const fetchInterviews = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
+        if (!token) return;
+
+        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000';
+        const res = await fetch(`${backendUrl}/api/interviews`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        if (!res.ok) {
+          console.error('Error fetching interviews from backend:', res.statusText);
+          return;
+        }
+        const data = await res.json();
+        setSessions(data.map(mapInterviewToSession));
+      } catch (err) {
+        console.error('Failed to load interviews:', err);
+      } finally {
+        setLoadingSessions(false);
+      }
+    };
+    fetchInterviews();
+  }, [user, authLoading, supabase]);
+
+  if (!mounted || authLoading || loadingSessions) return <ProfileSkeleton />;
+
+  const completed = sessions.filter(s => s.status === 'completed');
+  const avgOverall = completed.length > 0 
+    ? Math.round(completed.reduce((a, s) => a + s.scores.overall, 0) / completed.length) 
+    : 0;
+  const bestScore = completed.length > 0 
+    ? Math.max(...completed.map(s => s.scores.overall)) 
+    : 0;
+  const totalHours = completed.reduce((a, s) => a + s.duration, 0) / 60;
 
   const statsGrid = [
-    { value: '42', label: 'Mock sessions completed', accent: false, size: '3.2rem' },
-    { value: `${mockStats.avgScore}/100`, label: 'Average score', accent: false, size: '2.2rem' },
-    { value: '95/100', label: 'Personal best', accent: true, size: '2.6rem' },
-    { value: `${mockStats.totalHours}h`, label: 'Total practice time', accent: false, size: '2.2rem' },
+    { value: completed.length.toString(), label: 'Mock sessions completed', accent: false, size: '3.2rem' },
+    { value: `${avgOverall}/100`, label: 'Average score', accent: false, size: '2.2rem' },
+    { value: `${bestScore}/100`, label: 'Personal best', accent: true, size: '2.6rem' },
+    { value: `${totalHours.toFixed(1)}h`, label: 'Total practice time', accent: false, size: '2.2rem' },
   ];
 
   const milestones = [
-    { title: '10 Voice Sessions Completed', desc: 'Consistent mock practice streak maintained.', date: '2 days ago', color: T.green },
-    { title: '90+ Score Rating Achieved', desc: 'Top tier evaluation rating in STAR behavioral mock.', date: '1 week ago', color: '#f59e0b' },
-    { title: 'Target Goals Calibrated', desc: 'Successfully set requirements for Google SWE role.', date: '2 weeks ago', color: T.text2 },
+    { title: `${completed.length} Sessions Completed`, desc: 'Consistent mock practice history maintained.', date: 'Live data', color: T.green },
+    { title: 'Personal Best Score', desc: `Highest mock evaluation rating of ${bestScore} points.`, date: 'Live data', color: '#f59e0b' },
+    { title: 'Calibration Standard Active', desc: `Targeting ${targetCompany || 'Dream Company'} SWE targets.`, date: 'Calibrated', color: T.text2 },
   ];
+
+  const handleSaveTarget = async () => {
+    if (!user) return;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) return;
+
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000';
+      const res = await fetch(`${backendUrl}/api/profile`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          target_company: targetCompany.trim(),
+          target_role: targetRole.trim(),
+        })
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        console.error('Error updating targets:', errData.error);
+        alert(`Failed to save: ${errData.error || res.statusText}`);
+      } else {
+        await refreshProfile();
+        setEditingTarget(false);
+      }
+    } catch (err) {
+      console.error('Failed to save calibration:', err);
+    }
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20, width: '100%', paddingBottom: 64 }}>
@@ -92,21 +204,21 @@ export default function ProfilePage() {
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           fontSize: 22, fontWeight: 700, color: T.text0, flexShrink: 0, userSelect: 'none',
         }}>
-          {mockUser.name.charAt(0).toUpperCase()}
+          {(profile?.name || user?.email || 'User').charAt(0).toUpperCase()}
         </div>
 
         <div style={{ flex: 1, minWidth: 0 }}>
           <h2 style={{ fontSize: 24, fontWeight: 700, color: T.text0, margin: 0, lineHeight: 1 }}>
-            {mockUser.name}
+            {profile?.name || user?.email?.split('@')[0] || 'User'}
           </h2>
           <span style={{
             display: 'inline-block', marginTop: 6,
             backgroundColor: T.greenGhost, color: T.green,
             fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', fontWeight: 600,
             padding: '3px 8px', borderRadius: 999,
-          }}>Pro Calibrated</span>
+          }}>{profile?.plan || 'starter'} Calibrated</span>
           <p style={{ fontSize: 12, color: T.text3, marginTop: 6 }}>
-            {mockUser.email} · Joined Oct 2023
+            {user?.email}
           </p>
         </div>
 
@@ -148,7 +260,7 @@ export default function ProfilePage() {
                   border: `1px solid ${T.border}`, backgroundColor: 'transparent',
                   padding: '8px 14px', borderRadius: 8, cursor: 'pointer',
                 }}>Cancel</button>
-                <button onClick={() => setEditingTarget(false)} style={{
+                <button onClick={handleSaveTarget} style={{
                   fontSize: 12, fontWeight: 700, color: '#000', backgroundColor: T.green,
                   border: 'none', padding: '8px 14px', borderRadius: 8, cursor: 'pointer',
                 }}>Save</button>

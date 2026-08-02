@@ -81,113 +81,84 @@ src/
 
 ---
 
-## Backend (FastAPI)
+## Backend (Next.js & Hono)
 
-**Project structure:**
-```
-backend/
-  app/
-    api/         # route handlers, grouped by feature
-    core/        # config, security, dependencies
-    models/      # SQLAlchemy models
-    schemas/     # Pydantic request/response schemas
-    services/    # business logic, never in route handlers
-    db/          # database setup, migrations
-  tests/
-  alembic/       # migration files
-  main.py
-```
+**Project structure & API boundary:**
+- Place route handlers under `src/app/api/` or use Next.js Server Actions.
+- If Hono is introduced, run it as a sub-router under `/api/[[...route]]/route.ts`.
+- Keep API logic lean: validate input with Zod, run business logic, query Supabase, and return a clean JSON payload.
 
-**Routes are thin.**
-No business logic in route handlers. Route handlers validate input, call a service, return the result.
-
-```python
-@router.post("/sessions", response_model=SessionResponse)
-async def create_session(body: CreateSessionRequest, db: AsyncSession = Depends(get_db)):
-    return await session_service.create(db, body)
-```
-
-**Always use async.**
-All database calls, external API calls, and I/O must be `async`. Use `AsyncSession` from SQLAlchemy.
-
-**Pydantic schemas are not models.**
-Keep SQLAlchemy models and Pydantic schemas separate. Never return a raw ORM object from a route.
-
-**Dependency injection for everything shared.**
-Database sessions, current user, rate limiters — all via `Depends()`. Never instantiate these inside a function.
-
-**Config:**
-```python
-# core/config.py
-from pydantic_settings import BaseSettings
-
-class Settings(BaseSettings):
-    database_url: str
-    supabase_url: str
-    supabase_key: str
-    gemini_api_key: str
-    
-    class Config:
-        env_file = ".env"
-```
-No hardcoded values. No secrets in code. No `os.getenv` scattered across files.
+**Zod Input Validation:**
+- Never process user input directly in database queries. Always validate schemas on the server boundary first.
+- Example:
+  ```ts
+  import { z } from 'zod';
+  export const CreateInterviewSchema = z.object({
+    role: z.string().min(1).max(100),
+    company: z.string().min(1).max(100),
+    difficulty: z.enum(['easy', 'medium', 'hard']),
+    duration: z.number().int().min(15).max(60),
+    type: z.enum(['behavioral', 'system-design', 'technical', 'product', 'custom']),
+  });
+  ```
 
 ---
 
-## Database (PostgreSQL + Supabase)
+## Database Efficiency (Supabase + PostgreSQL)
 
-**Migrations are mandatory.**
-Every schema change goes through Alembic. Never alter a table manually in production.
+As we are running on a **Supabase Free Tier plan**, we must stay strictly within network, CPU, and connection limits. Efficiency and performance must be treated as primary engineering constraints.
 
-```bash
-# Generate a migration
-alembic revision --autogenerate -m "add sessions table"
+### 1. Optimize RLS Policies (Critical)
+- **Do not run dynamic functions per row**: Avoid calling `auth.uid()` directly in a policy `USING` clause. With large tables, Postgres will call `auth.uid()` for every single row scanned, causing CPU spikes.
+- **Wrap in a SELECT statement**: Always wrap identity helper functions in a subquery `(select auth.uid())` so Postgres executes it once and caches the result for the entire query.
+  ```sql
+  -- Incorrect (Runs auth.uid() per row)
+  create policy "Users can view own interviews" on interviews
+    using (auth.uid() = user_id);
 
-# Apply
-alembic upgrade head
-```
+  -- Correct (Executes once and caches)
+  create policy "Users can view own interviews" on interviews
+    to authenticated
+    using ((select auth.uid()) = user_id);
+  ```
 
-**Never use raw SQL strings.**
-Use SQLAlchemy ORM or SQLAlchemy `text()` with bound parameters for anything dynamic.
+### 2. Indexes on All Query Keys
+- Every foreign key, filter criteria (`WHERE` clauses), and sort key (`ORDER BY`) must have an index.
+- Use **composite indexes** for queries filtering on multiple columns (e.g. `user_id` and `status`).
+- Use **partial indexes** if querying a subset of active rows to minimize index size.
+  ```sql
+  -- Index foreign key + ordering
+  create index interviews_user_id_created_at_idx on interviews (user_id, created_at desc);
+  ```
 
-```python
-# Wrong
-query = f"SELECT * FROM users WHERE email = '{email}'"
+### 3. Eliminate N+1 Queries & Redundant Hits
+- **Batch fetching**: When rendering lists (e.g., sessions with their latest reports), query the database using joins or subqueries instead of running multiple independent queries in loops.
+- **Explicit Selects**: Never use `select('*')` unless you actually need every column. Select only the necessary columns to reduce memory usage and network payload.
+  ```ts
+  // Correct: select specific columns
+  const { data } = await supabase
+    .from('interviews')
+    .select('id, role, company, status, created_at')
+    .eq('user_id', userId);
+  ```
 
-# Right
-result = await db.execute(select(User).where(User.email == email))
-```
+### 4. Connection Pool Management
+- Do not instantiate new Supabase clients per request on the server. Reuse a single shared instance or utilize `@supabase/ssr` contexts.
+- Avoid persistent WebSockets / Realtime subscriptions unless absolutely required by the user interface. Prefer stateless HTTPS queries.
 
-**Connection pooling.**
-Use `asyncpg` with SQLAlchemy async engine. Set `pool_size`, `max_overflow`, and `pool_pre_ping=True`.
+### 5. Enforce Query Limits & Pagination
+- Set hard limits on all list endpoints and user queries. Never fetch unbounded tables.
+  ```ts
+  const { data } = await supabase
+    .from('interviews')
+    .select('id, role, company')
+    .limit(20);
+  ```
 
-```python
-engine = create_async_engine(
-    settings.database_url,
-    pool_size=10,
-    max_overflow=20,
-    pool_pre_ping=True,
-    pool_recycle=3600,
-)
-```
-
-**Indexes on anything you query.**
-Every foreign key, every `WHERE` field, every `ORDER BY` field needs an index. Define them in migrations, not as afterthoughts.
-
-**Soft deletes, not hard deletes.**
-Add `deleted_at: timestamp | null` to sensitive tables. Never `DELETE` user data.
-
-**Row-level security via Supabase.**
-Define RLS policies for every table users can access. Never rely solely on application-level checks.
-
-**Transactions for multi-step writes.**
-If you write to more than one table, use a transaction.
-
-```python
-async with db.begin():
-    await db.execute(insert_session)
-    await db.execute(insert_transcript)
-```
+### 6. Correct Schema Data Types
+- Use `uuid` for IDs instead of `text` or sequence ints.
+- Use `timestamptz` for dates to store timezone-aware timestamps.
+- Use `varchar(N)` or constraints instead of unbounded `text` where size limits are known.
 
 ---
 
@@ -357,6 +328,8 @@ Section padding: `8rem 2rem` desktop, `4–5rem 1.25rem` mobile.
 - **No scroll progress bars in multiple colors** — use `bg-white/20`
 - **No AI orb** (the generic purple→blue→cyan glowing sphere used on every AI landing page)
 - **Don't add color to sections just to distinguish them** — use typography hierarchy instead
+- **No container padding collisions (squishing)** — when building complex layouts inside wrapper elements (like `Card`), always set `padding="none"` (or `p-0`) on the wrapper if it contains headers, scroll elements, or footers. Align inner layout blocks directly to outer borders to prevent double-padding and elements overlapping.
+- **No low contrast text on background fills** — never use low contrast/dimmed text colors (like secondary text on soft green/tinted backgrounds). Ensure text on any container fill uses high contrast colors (like primary white `var(--text-0)` or `#FAFAFA`) to guarantee instant readability.
 
 ### The Rule of One Accent
 The green `#22C55E` appears in:

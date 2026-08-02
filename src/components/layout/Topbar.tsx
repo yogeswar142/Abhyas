@@ -4,8 +4,8 @@ import React from 'react';
 import { Breadcrumbs } from './Breadcrumbs';
 import { cn } from '@/lib/utils';
 import { Avatar } from '../ui/Avatar';
-import { mockUser } from '@/lib/mock-data';
 import { useTheme } from '@/contexts/ThemeContext';
+import { useAuth } from '@/contexts/AuthContext';
 
 // Sun icon
 function SunIcon() {
@@ -36,6 +36,7 @@ interface TopbarProps {
 
 export function Topbar({ sidebarCollapsed, onToggleSidebar }: TopbarProps) {
   const { theme, toggle } = useTheme();
+  const { user, profile } = useAuth();
 
   return (
     <header
@@ -124,10 +125,10 @@ export function Topbar({ sidebarCollapsed, onToggleSidebar }: TopbarProps) {
           onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--v-hover)'}
           onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
         >
-          <Avatar name={mockUser.name} size="sm" />
+          <Avatar name={profile?.name || user?.email || 'User'} size="sm" />
           <div className="hidden md:flex items-center gap-1">
             <span className="text-[13px] font-medium" style={{ color: 'var(--v-tx0)' }}>
-              {mockUser.name.split(' ')[0]}
+              {(profile?.name || user?.email?.split('@')[0] || 'User').split(' ')[0]}
             </span>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--v-tx2)' }}>
               <polyline points="6 9 12 15 18 9"></polyline>

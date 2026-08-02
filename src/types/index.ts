@@ -1,5 +1,10 @@
 export type InterviewType = 'behavioral' | 'system-design' | 'technical' | 'product' | 'custom';
-export type SessionStatus = 'completed' | 'in-progress' | 'scheduled';
+export type SessionStatus =
+  | 'completed'
+  | 'in-progress'
+  | 'scheduled'
+  | 'analyzing'
+  | 'incomplete';
 export type Difficulty = 'easy' | 'medium' | 'hard';
 
 export interface User {
@@ -46,4 +51,14 @@ export interface StatCard {
   delta?: string;
   deltaPositive?: boolean;
   description?: string;
+}
+
+export interface Profile {
+  id: string;
+  name: string | null;
+  avatar_initials: string | null;
+  plan: 'starter' | 'pro' | 'teams';
+  target_company: string | null;
+  target_role: string | null;
+  updated_at: string;
 }

@@ -7,7 +7,6 @@ import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '../../lib/utils';
 import { NAV_ITEMS, APP_NAME } from '../../lib/constants';
 import { Avatar } from '../ui/Avatar';
-import { mockUser } from '../../lib/mock-data';
 import {
   Tooltip,
   TooltipContent,
@@ -80,7 +79,7 @@ interface SidebarProps {
 export function Sidebar({ pinned, onTogglePin, isHovered, onHoverChange }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, signOut } = useAuth();
+  const { user, profile, signOut } = useAuth();
 
   const isExpanded = pinned || isHovered;
 
@@ -170,17 +169,17 @@ export function Sidebar({ pinned, onTogglePin, isHovered, onHoverChange }: Sideb
                   )}
                 >
                   <Avatar
-                    name={user?.email || mockUser.name}
+                    name={profile?.name || user?.email || 'User'}
                     size="sm"
                     className="shrink-0"
                   />
                   {isExpanded && (
                     <div className="flex-1 min-w-0">
                       <p className="text-[13px] font-medium text-[var(--v-tx0)] truncate">
-                        {user?.email ? user.email.split('@')[0] : mockUser.name}
+                        {profile?.name || (user?.email ? user.email.split('@')[0] : 'User')}
                       </p>
                       <p className="text-[11px] text-[var(--v-tx2)] capitalize">
-                        {mockUser.plan} Tier
+                        {profile?.plan || 'starter'} Tier
                       </p>
                     </div>
                   )}

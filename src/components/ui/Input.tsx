@@ -47,8 +47,8 @@ export function Input({
             error
               ? 'border-red-500/60 focus:border-red-500/60 focus:ring-red-500/10'
               : 'border-surface-line hover:border-white/15',
-            icon && iconPosition === 'left' && 'pl-9',
-            icon && iconPosition === 'right' && 'pr-9'
+            icon && iconPosition === 'left' ? 'pl-9' : undefined,
+            icon && iconPosition === 'right' ? 'pr-9' : undefined
           )}
           {...props}
         />

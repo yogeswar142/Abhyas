@@ -1,10 +1,12 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { mockSessions } from '@/lib/mock-data';
 import { formatRelativeTime, formatDuration, getScoreColor } from '@/lib/utils';
 import { INTERVIEW_TYPES } from '@/lib/constants';
+import { useAuth } from '@/contexts/AuthContext';
+import { createClient } from '@/lib/supabase/client';
+import type { Session, InterviewType, SessionStatus } from '@/types';
 
 const T = {
   card: 'var(--v-card)', cardHov: 'var(--v-raised)', border: 'var(--v-border)',
@@ -68,24 +70,90 @@ function RingMetric({ label, score }: { label: string; score: number }) {
 
 // ── Filters ───────────────────────────────────────────────────────────────────
 
-const FILTERS = ['All', 'Completed', 'This Week'] as const;
+const FILTERS = ['All', 'Completed', 'Incomplete', 'This Week'] as const;
 type Filter = typeof FILTERS[number];
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
+function mapInterviewToSession(row: any): Session {
+  return {
+    id: row.id,
+    type: row.type as InterviewType,
+    company: row.company,
+    role: row.role,
+    date: row.created_at,
+    duration: row.duration,
+    status: row.status as SessionStatus,
+    scores: {
+      clarity: row.score_clarity || 0,
+      structure: row.score_structure || 0,
+      confidence: row.score_confidence || 0,
+      depth: row.score_depth || 0,
+      overall: Number(row.score_overall || 0),
+    },
+    feedback: row.feedback || undefined,
+    questionsAsked: row.questions_asked || 0,
+  };
+}
+
 export default function ReportsPage() {
+  const { user } = useAuth();
+  const supabase = useMemo(() => createClient(), []);
+  
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Filter>('All');
 
-  const filteredSessions = mockSessions.filter(session => {
+  useEffect(() => {
+    if (!user) return;
+    const fetchInterviews = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
+        if (!token) return;
+
+        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000';
+        const res = await fetch(`${backendUrl}/api/interviews`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        if (!res.ok) {
+          console.error('Error fetching interviews from backend:', res.statusText);
+          return;
+        }
+        const data = await res.json();
+        setSessions(data.map(mapInterviewToSession));
+      } catch (err) {
+        console.error('Failed to load interviews:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchInterviews();
+  }, [user, supabase]);
+
+  const filteredSessions = sessions.filter(session => {
     if (filter === 'Completed') return session.status === 'completed';
+    if (filter === 'Incomplete') return session.status === 'incomplete';
     if (filter === 'This Week')
       return new Date(session.date).getTime() > Date.now() - 7 * 24 * 60 * 60 * 1000;
     return true;
   });
 
+  // Analyzing sessions are excluded from totals until scores land
+  const completed = sessions.filter(s => s.status === 'completed' && s.scores.overall > 0);
+  const avg = (key: keyof Session['scores']) => {
+    if (completed.length === 0) return 0;
+    return Math.round(completed.reduce((a, s) => a + s.scores[key], 0) / completed.length);
+  };
+  const avgOverall = avg('overall');
+
   const rubrics = [
-    { label: 'Clarity', score: 85 }, { label: 'Structure', score: 82 },
-    { label: 'Confidence', score: 78 }, { label: 'Depth', score: 72 },
+    { label: 'Clarity', score: avg('clarity') },
+    { label: 'Structure', score: avg('structure') },
+    { label: 'Confidence', score: avg('confidence') },
+    { label: 'Depth', score: avg('depth') },
   ];
 
   return (
@@ -123,7 +191,7 @@ export default function ReportsPage() {
             <div>
               <p style={sL}>Calibration Progression</p>
               <p style={{ fontSize: 36, fontWeight: 900, color: T.text0, margin: '4px 0 0', fontVariantNumeric: 'tabular-nums' }}>
-                82.5 <span style={{ fontSize: 14, fontWeight: 400, color: T.text2 }}>avg score</span>
+                {avgOverall} <span style={{ fontSize: 14, fontWeight: 400, color: T.text2 }}>avg score</span>
               </p>
             </div>
             <span style={{ fontSize: 10, color: T.green, fontWeight: 600, backgroundColor: T.greenGhost, padding: '4px 10px', borderRadius: 8 }}>
@@ -245,8 +313,16 @@ export default function ReportsPage() {
                           <div style={{ height: '100%', width: `${score}%`, backgroundColor: getScoreColor(score), borderRadius: 999 }} />
                         </div>
                       </div>
-                    ) : (
+                    ) : session.status === 'analyzing' ? (
                       <span style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#eab308', backgroundColor: 'rgba(234,179,8,0.1)', padding: '4px 8px', borderRadius: 6, fontFamily: 'monospace' }}>
+                        Calculating…
+                      </span>
+                    ) : session.status === 'incomplete' ? (
+                      <span style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#6b7280', backgroundColor: 'rgba(107,114,128,0.1)', padding: '4px 8px', borderRadius: 6, fontFamily: 'monospace' }}>
+                        Didn&apos;t Finish
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.1em', color: T.text3, backgroundColor: 'rgba(255,255,255,0.05)', padding: '4px 8px', borderRadius: 6, fontFamily: 'monospace' }}>
                         {session.status}
                       </span>
                     )}

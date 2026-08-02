@@ -1,13 +1,16 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { INTERVIEW_TYPES, SESSION_DURATIONS } from '@/lib/constants';
+import { useAuth } from '@/contexts/AuthContext';
+import { createClient } from '@/lib/supabase/client';
 
 const T = {
   card: 'var(--v-card)', cardHov: 'var(--v-raised)', border: 'var(--v-border)',
-  line: 'var(--v-border)', green: 'var(--v-accent)', greenGhost: 'var(--v-float)',
+  line: 'var(--v-line)', green: 'var(--v-accent)', greenGhost: 'var(--v-accent-ghost)',
   text0: 'var(--v-tx0)', text1: 'var(--v-tx1)', text2: 'var(--v-tx2)', text3: 'var(--v-tx3)',
+  hover: 'var(--v-hover)',
 };
 
 const sL: React.CSSProperties = {
@@ -97,7 +100,7 @@ function MicLevel() {
         ))}
       </div>
       <span style={{ fontSize: 10, fontFamily: 'monospace', color: T.text3, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-        Mic check
+        Mic verified at session start
       </span>
     </div>
   );
@@ -139,6 +142,9 @@ const TYPE_ICONS: Record<string, React.ReactNode> = {
 
 export default function NewInterviewPage() {
   const router = useRouter();
+  const { user, profile } = useAuth();
+  const supabase = useMemo(() => createClient(), []);
+
   const [selectedType, setSelectedType] = useState('behavioral');
   const [company, setCompany] = useState('Google');
   const [role, setRole] = useState('Senior Software Engineer');
@@ -146,10 +152,58 @@ export default function NewInterviewPage() {
   const [duration, setDuration] = useState('45');
   const [isStarting, setIsStarting] = useState(false);
 
+  // Calibrate to user's targeted company & role once profile resolves
+  useEffect(() => {
+    if (profile?.target_company) setCompany(profile.target_company);
+    if (profile?.target_role) setRole(profile.target_role);
+  }, [profile]);
+
   const handleStart = async () => {
+    if (!user) {
+      alert('You must be signed in to start an interview simulation.');
+      return;
+    }
+    if (!company.trim() || !role.trim()) {
+      alert('Please provide a target company and role.');
+      return;
+    }
+
     setIsStarting(true);
-    await new Promise(r => setTimeout(r, 700));
-    router.push('/interview/new_session_123');
+    try {
+      const durationNum = parseInt(duration, 10);
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) return;
+
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000';
+      const res = await fetch(`${backendUrl}/api/interviews`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          type: selectedType,
+          company: company.trim(),
+          role: role.trim(),
+          difficulty: difficulty,
+          duration: durationNum
+        })
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        console.error('Error starting session:', errData.error);
+        alert(`Failed to start session: ${errData.error || res.statusText}`);
+        setIsStarting(false);
+      } else {
+        const data = await res.json();
+        router.push(`/interview/${data.id}`);
+      }
+    } catch (err) {
+      console.error('Failed to create interview:', err);
+      setIsStarting(false);
+    }
   };
 
   return (
@@ -192,14 +246,14 @@ export default function NewInterviewPage() {
                   cursor: 'pointer', transition: 'all 0.2s ease', position: 'relative',
                   boxShadow: sel ? '0 0 24px -6px rgba(34,197,94,0.2)' : 'none',
                 }}
-                onMouseEnter={e => { if (!sel) e.currentTarget.style.backgroundColor = T.cardHov; }}
+                onMouseEnter={e => { if (!sel) e.currentTarget.style.backgroundColor = T.hover; }}
                 onMouseLeave={e => { if (!sel) e.currentTarget.style.backgroundColor = T.card; }}
               >
                 {sel && <span style={{ position: 'absolute', top: 12, right: 12, width: 7, height: 7, borderRadius: '50%', backgroundColor: T.green, boxShadow: `0 0 8px ${T.green}` }} />}
                 <div style={{
                   width: 38, height: 38, borderRadius: 10, marginBottom: 12,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  backgroundColor: sel ? T.green : T.cardHov,
+                  backgroundColor: sel ? T.green : T.hover,
                   border: sel ? 'none' : `1px solid ${T.border}`,
                   color: sel ? '#000' : T.text2,
                 }}>

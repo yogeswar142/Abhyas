@@ -1,12 +1,14 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { mockUser, mockSessions, mockStats } from '@/lib/mock-data';
 import { formatRelativeTime, formatDuration } from '@/lib/utils';
 import { INTERVIEW_TYPES } from '@/lib/constants';
 import { DashboardSkeleton } from '@/components/skeletons/DashboardSkeleton';
+import { useAuth } from '@/contexts/AuthContext';
+import { createClient } from '@/lib/supabase/client';
+import type { Session, InterviewType, SessionStatus } from '@/types';
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
 const T = {
@@ -116,27 +118,132 @@ function ReadinessRing({ score, circ, offset }: { score: number; circ: number; o
 }
 
 // ── Page ─────────────────────────────────────────────────────────────────────
+function mapInterviewToSession(row: any): Session {
+  return {
+    id: row.id,
+    type: row.type as InterviewType,
+    company: row.company,
+    role: row.role,
+    date: row.created_at,
+    duration: row.duration,
+    status: row.status as SessionStatus,
+    scores: {
+      clarity: row.score_clarity || 0,
+      structure: row.score_structure || 0,
+      confidence: row.score_confidence || 0,
+      depth: row.score_depth || 0,
+      overall: Number(row.score_overall || 0),
+    },
+    feedback: row.feedback || undefined,
+    questionsAsked: row.questions_asked || 0,
+  };
+}
+
 export default function DashboardPage() {
   const router = useRouter();
+  const { user, profile, isLoading: authLoading } = useAuth();
+  const supabase = useMemo(() => createClient(), []);
+  
   const [mounted, setMounted] = useState(false);
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [loadingSessions, setLoadingSessions] = useState(true);
   const [launching, setLaunching] = useState(false);
   const [ringOff, setRingOff] = useState(0);
+  const [stats, setStats] = useState({
+    totalSessions: 0,
+    totalHours: 0,
+    activeStreak: 0,
+    avgScore: 0
+  });
 
-  const completed = mockSessions.filter(s => s.status === 'completed');
-  const avg = (key: string) =>
-    Math.round(completed.reduce((a, s) => a + (s.scores as any)[key], 0) / (completed.length || 1));
-  const avgOverall = avg('overall');
+  // Only fully scored sessions count toward skill metrics
+  const completed = sessions.filter(s => s.status === 'completed' && s.scores.overall > 0);
+  const recentSessions = sessions.filter(
+    s => s.status === 'completed' || s.status === 'analyzing' || s.status === 'incomplete'
+  );
+  const avg = (key: keyof Session['scores']) => {
+    if (completed.length === 0) return 0;
+    return Math.round(completed.reduce((a, s) => a + s.scores[key], 0) / completed.length);
+  };
+  const avgOverall = stats.avgScore || avg('overall');
 
   const R = 42;
   const CIRC = 2 * Math.PI * R;
 
   useEffect(() => { setMounted(true); }, []);
+
   useEffect(() => {
-    if (!mounted) return;
+    if (!user) {
+      if (!authLoading) setLoadingSessions(false);
+      return;
+    }
+
+    const fetchInterviews = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
+        if (!token) return;
+
+        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000';
+        const res = await fetch(`${backendUrl}/api/interviews?limit=30`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        if (!res.ok) {
+          console.error('Error fetching interviews from backend:', res.statusText);
+          return;
+        }
+        const data = await res.json();
+        setSessions(data.map(mapInterviewToSession));
+      } catch (err) {
+        console.error('Failed to load interviews:', err);
+      } finally {
+        setLoadingSessions(false);
+      }
+    };
+
+    const fetchStats = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
+        if (!token) return;
+
+        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000';
+        const res = await fetch(`${backendUrl}/api/interviews/stats`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        if (!res.ok) {
+          console.error('Error fetching stats from backend:', res.statusText);
+          return;
+        }
+        const data = await res.json();
+        if (data && data.length > 0) {
+          const s = data[0];
+          setStats({
+            totalSessions: Number(s.total_sessions || 0),
+            totalHours: Number(s.total_hours || 0),
+            activeStreak: Number(s.active_streak || 0),
+            avgScore: Math.round(Number(s.avg_score || 0))
+          });
+        }
+      } catch (err) {
+        console.error('Failed to load stats:', err);
+      }
+    };
+
+    fetchInterviews();
+    fetchStats();
+  }, [user, authLoading, supabase]);
+
+  useEffect(() => {
+    if (!mounted || loadingSessions) return;
     setRingOff(CIRC);
     const t = setTimeout(() => setRingOff(CIRC - (CIRC * avgOverall) / 100), 200);
     return () => clearTimeout(t);
-  }, [mounted, avgOverall, CIRC]);
+  }, [mounted, loadingSessions, avgOverall, CIRC]);
 
   const launch = async () => {
     setLaunching(true);
@@ -144,12 +251,38 @@ export default function DashboardPage() {
     router.push('/interview/new');
   };
 
-  if (!mounted) return <DashboardSkeleton />;
+  if (!mounted || authLoading || loadingSessions) return <DashboardSkeleton />;
 
-  // Mock trend data
-  const trendData1 = [40, 55, 45, 70, 65, 85, 79];
-  const trendData2 = [2, 3, 2, 5, 4, 7, 12];
-  const trendData3 = [1, 2, 2.5, 4, 8, 15, 24.5];
+  const targetCompany = profile?.target_company || 'your dream company';
+  const targetRole = profile?.target_role || 'your target role';
+
+  // Overall score history for the first sparkline
+  const trendData1 = sessions.length > 0 
+    ? sessions.map(s => s.scores.overall || 50).reverse() 
+    : [50, 50, 50, 50, 50, 50, 50];
+
+  // Streak trend: 7 days activity
+  const trendData2 = sessions.length > 0 
+    ? Array.from({ length: 7 }, (_, i) => {
+        const d = new Date();
+        d.setDate(d.getDate() - (6 - i));
+        const dateStr = d.toISOString().split('T')[0];
+        return sessions.filter(s => s.date.split('T')[0] === dateStr).length;
+      })
+    : [0, 0, 0, 0, 0, 0, stats.activeStreak];
+
+  // Practice hours trend: 7 days cumulative hours
+  const trendData3 = sessions.length > 0 
+    ? Array.from({ length: 7 }, (_, i) => {
+        const d = new Date();
+        d.setDate(d.getDate() - (6 - i));
+        const dateStr = d.toISOString().split('T')[0];
+        const hours = sessions
+          .filter(s => s.status === 'completed' && s.date.split('T')[0] === dateStr)
+          .reduce((sum, s) => sum + s.duration, 0) / 60;
+        return Number(hours.toFixed(1));
+      })
+    : [0, 0, 0, 0, 0, 0, stats.totalHours];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24, width: '100%', paddingBottom: 64 }}>
@@ -188,7 +321,7 @@ export default function DashboardPage() {
               Ready for your next interview?
             </h1>
             <p style={{ fontSize: 15, color: T.text2, margin: 0, maxWidth: 500, lineHeight: 1.5 }}>
-              Targeting <strong style={{ color: T.text0, fontWeight: 500 }}>{mockUser.targetCompany}</strong> as a <strong style={{ color: T.text0, fontWeight: 500 }}>{mockUser.targetRole}</strong>. 
+              Targeting <strong style={{ color: T.text0, fontWeight: 500 }}>{targetCompany}</strong> as a <strong style={{ color: T.text0, fontWeight: 500 }}>{targetRole}</strong>. 
               Your current readiness score is tracking in the top 12% of candidates.
             </p>
           </div>
@@ -229,7 +362,7 @@ export default function DashboardPage() {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.text3} strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
           </div>
           <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: 32, fontWeight: 700, letterSpacing: '-0.04em', color: T.text0, lineHeight: 1 }}>42</span>
+            <span style={{ fontSize: 32, fontWeight: 700, letterSpacing: '-0.04em', color: T.text0, lineHeight: 1 }}>{stats.totalSessions}</span>
             <div style={{ width: 80 }}><Sparkline data={trendData1} color={T.text3} /></div>
           </div>
         </Panel>
@@ -254,7 +387,7 @@ export default function DashboardPage() {
           </div>
           <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
             <span style={{ fontSize: 32, fontWeight: 700, letterSpacing: '-0.04em', color: T.text0, lineHeight: 1 }}>
-              {mockStats.bestStreak}<span style={{ fontSize: 16, color: T.text2, fontWeight: 500 }}>d</span>
+              {stats.activeStreak}<span style={{ fontSize: 16, color: T.text2, fontWeight: 500 }}>d</span>
             </span>
             <div style={{ width: 80 }}><Sparkline data={trendData2} color="#f59e0b" /></div>
           </div>
@@ -267,7 +400,7 @@ export default function DashboardPage() {
           </div>
           <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
             <span style={{ fontSize: 32, fontWeight: 700, letterSpacing: '-0.04em', color: T.text0, lineHeight: 1 }}>
-              {mockStats.totalHours}<span style={{ fontSize: 16, color: T.text2, fontWeight: 500 }}>h</span>
+              {stats.totalHours}<span style={{ fontSize: 16, color: T.text2, fontWeight: 500 }}>h</span>
             </span>
             <div style={{ width: 80 }}><Sparkline data={trendData3} color={T.text3} /></div>
           </div>
@@ -287,14 +420,15 @@ export default function DashboardPage() {
           </div>
 
           <Panel style={{ overflow: 'hidden' }}>
-            {completed.length === 0 ? (
+            {recentSessions.length === 0 ? (
               <div style={{ padding: 40, textAlign: 'center' }}>
                 <p style={{ color: T.text2, fontSize: 14 }}>No sessions completed yet.</p>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column' }}>
-                {completed.slice(0, 5).map((session, idx) => {
+                {recentSessions.slice(0, 5).map((session, idx) => {
                   const score = session.scores.overall;
+                  const analyzing = session.status === 'analyzing';
                   const typeLabel = INTERVIEW_TYPES.find(t => t.id === session.type)?.label ?? session.type;
                   
                   return (
@@ -303,7 +437,7 @@ export default function DashboardPage() {
                       style={{
                         display: 'grid', gridTemplateColumns: '1fr auto auto',
                         alignItems: 'center', padding: '16px 20px', gap: 16,
-                        borderBottom: idx < Math.min(completed.length, 5) - 1 ? `1px solid ${T.line}` : 'none',
+                        borderBottom: idx < Math.min(recentSessions.length, 5) - 1 ? `1px solid ${T.line}` : 'none',
                         transition: 'background 0.15s ease',
                       }}
                       onMouseEnter={e => (e.currentTarget.style.backgroundColor = T.hover)}
@@ -330,10 +464,26 @@ export default function DashboardPage() {
                         </div>
                       </div>
 
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 60, justifyContent: 'flex-end' }}>
-                        <span style={{ fontSize: 16, fontWeight: 600, color: scoreCol(score), fontVariantNumeric: 'tabular-nums' }}>
-                          {score}
-                        </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 88, justifyContent: 'flex-end' }}>
+                        {analyzing ? (
+                          <span style={{
+                            fontSize: 10, fontWeight: 700, fontFamily: 'monospace', textTransform: 'uppercase',
+                            letterSpacing: '0.06em', color: '#eab308',
+                          }}>
+                            Calculating…
+                          </span>
+                        ) : session.status === 'incomplete' ? (
+                          <span style={{
+                            fontSize: 10, fontWeight: 700, fontFamily: 'monospace', textTransform: 'uppercase',
+                            letterSpacing: '0.06em', color: '#6b7280',
+                          }}>
+                            Didn&apos;t Finish
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: 16, fontWeight: 600, color: scoreCol(score), fontVariantNumeric: 'tabular-nums' }}>
+                            {score}
+                          </span>
+                        )}
                       </div>
 
                       <Link href={`/interview/${session.id}`}>
@@ -346,7 +496,7 @@ export default function DashboardPage() {
                         onMouseEnter={e => e.currentTarget.style.backgroundColor = T.hover}
                         onMouseLeave={e => e.currentTarget.style.backgroundColor = T.raised}
                         >
-                          Review
+                          {analyzing ? 'Open' : session.status === 'incomplete' ? 'View' : 'Review'}
                         </button>
                       </Link>
                     </div>

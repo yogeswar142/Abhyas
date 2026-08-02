@@ -1,7 +1,15 @@
 'use client';
 
-import React, { useState } from 'react';
-import { mockUser } from '@/lib/mock-data';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
+import { createClient } from '@/lib/supabase/client';
+import {
+  checkBridgeHealth,
+  loadBridgeConfig,
+  normalizeBridgeUrl,
+  saveBridgeConfig,
+  type BridgeHealth,
+} from '@/lib/bridge';
 
 const T = {
   card: 'var(--v-card)', cardHov: 'var(--v-raised)', border: 'var(--v-border)',
@@ -59,24 +67,27 @@ function ToggleRow({ label, desc, defaultOn = true }: { label: string; desc: str
 
 // ── Input atom ────────────────────────────────────────────────────────────────
 
-function FieldInput({ label, type = 'text', defaultValue, placeholder }: {
-  label: string; type?: string; defaultValue?: string; placeholder?: string;
+function FieldInput({ label, type = 'text', value, onChange, placeholder, disabled }: {
+  label: string; type?: string; value?: string; onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void; placeholder?: string; disabled?: boolean;
 }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <label style={{ fontSize: 11, fontWeight: 600, color: T.text2, textTransform: 'uppercase', letterSpacing: '0.1em' }}>{label}</label>
       <input
         type={type}
-        defaultValue={defaultValue}
+        value={value}
+        onChange={onChange}
         placeholder={placeholder}
+        disabled={disabled}
         style={{
           backgroundColor: T.cardHov, border: `1px solid ${T.border}`, borderRadius: 10,
-          padding: '10px 14px', fontSize: 13, color: T.text0,
+          padding: '10px 14px', fontSize: 13, color: disabled ? T.text3 : T.text0,
           outline: 'none', width: '100%', boxSizing: 'border-box',
           fontFamily: 'inherit',
+          cursor: disabled ? 'not-allowed' : 'text',
         }}
-        onFocus={e => { e.target.style.borderColor = T.green; e.target.style.boxShadow = `0 0 0 3px rgba(34,197,94,0.12)`; }}
-        onBlur={e => { e.target.style.borderColor = T.border; e.target.style.boxShadow = 'none'; }}
+        onFocus={e => { if (!disabled) { e.target.style.borderColor = T.green; e.target.style.boxShadow = `0 0 0 3px rgba(34,197,94,0.12)`; } }}
+        onBlur={e => { if (!disabled) { e.target.style.borderColor = T.border; e.target.style.boxShadow = 'none'; } }}
       />
     </div>
   );
@@ -106,13 +117,110 @@ function OutlineBtn({ children, onClick }: { children: React.ReactNode; onClick?
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 
-const TABS = ['Account', 'Notifications', 'Privacy', 'Billing'] as const;
+const TABS = ['Account', 'Local AI', 'Notifications', 'Privacy', 'Billing'] as const;
 type Tab = typeof TABS[number];
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
+  const { user, profile, refreshProfile } = useAuth();
+  const supabase = useMemo(() => createClient(), []);
+  
   const [activeTab, setActiveTab] = useState<Tab>('Account');
+  const [name, setName] = useState('');
+  const [bridgeUrl, setBridgeUrl] = useState('http://localhost:11435');
+  const [bridgeModel, setBridgeModel] = useState('');
+  const [bridgeHealth, setBridgeHealth] = useState<BridgeHealth | null>(null);
+  const [bridgeTesting, setBridgeTesting] = useState(false);
+  const [bridgeMsg, setBridgeMsg] = useState('');
+
+  useEffect(() => {
+    if (profile) {
+      setName(profile.name || '');
+    }
+  }, [profile]);
+
+  useEffect(() => {
+    const cfg = loadBridgeConfig();
+    if (cfg) {
+      setBridgeUrl(cfg.bridgeUrl);
+      setBridgeModel(cfg.model);
+    }
+  }, []);
+
+  const handleSaveProfile = async () => {
+    if (!user) return;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) return;
+
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000';
+      const res = await fetch(`${backendUrl}/api/profile`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          name: name.trim()
+        })
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        console.error('Error saving profile:', errData.error);
+        alert(`Failed to save: ${errData.error || res.statusText}`);
+      } else {
+        await refreshProfile();
+        alert('Profile details updated!');
+      }
+    } catch (err) {
+      console.error('Failed to save settings:', err);
+    }
+  };
+
+  const handleTestBridge = async () => {
+    setBridgeTesting(true);
+    setBridgeMsg('');
+    setBridgeHealth(null);
+    try {
+      const url = normalizeBridgeUrl(bridgeUrl);
+      if (!url) {
+        setBridgeMsg('Enter a bridge URL from abhyas-bridge run.');
+        return;
+      }
+      const health = await checkBridgeHealth(url);
+      setBridgeHealth(health);
+      setBridgeUrl(url);
+      if (health.status !== 'healthy') {
+        setBridgeMsg(health.error || 'Bridge unhealthy — is Ollama running?');
+        return;
+      }
+      const names = health.models.map((m) => m.name);
+      const next =
+        (bridgeModel && names.includes(bridgeModel) && bridgeModel) ||
+        health.model ||
+        names[0] ||
+        '';
+      setBridgeModel(next);
+      setBridgeMsg(`Connected · ${names.length} model${names.length === 1 ? '' : 's'}`);
+    } catch {
+      setBridgeMsg('Cannot reach bridge. Check the URL and that abhyas-bridge is running.');
+    } finally {
+      setBridgeTesting(false);
+    }
+  };
+
+  const handleSaveBridge = () => {
+    const url = normalizeBridgeUrl(bridgeUrl);
+    if (!url || !bridgeModel) {
+      setBridgeMsg('Test connection and select a model before saving.');
+      return;
+    }
+    saveBridgeConfig({ bridgeUrl: url, model: bridgeModel });
+    setBridgeMsg('Saved. New interviews will use these defaults.');
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24, width: '100%', paddingBottom: 64 }}>
@@ -134,7 +242,7 @@ export default function SettingsPage() {
       <div style={{ display: 'flex', gap: 32, alignItems: 'flex-start', flexWrap: 'wrap' }}>
 
         {/* Left nav */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, width: 160, flexShrink: 0 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, width: 168, flexShrink: 0 }}>
           {TABS.map(tab => (
             <button key={tab} onClick={() => setActiveTab(tab)} style={{
               textAlign: 'left', fontSize: 13, fontWeight: 600, padding: '8px 12px', borderRadius: 10,
@@ -156,9 +264,9 @@ export default function SettingsPage() {
             <>
               <Panel style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
                 <p style={sL}>Profile Information</p>
-                <FieldInput label="Full Name" defaultValue={mockUser.name} />
-                <FieldInput label="Email Address" type="email" defaultValue={mockUser.email} />
-                <GreenBtn>Save Profile Settings</GreenBtn>
+                <FieldInput label="Full Name" value={name} onChange={e => setName(e.target.value)} />
+                <FieldInput label="Email Address" type="email" value={user?.email || ''} disabled />
+                <GreenBtn onClick={handleSaveProfile}>Save Profile Settings</GreenBtn>
               </Panel>
 
               <Panel style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -187,6 +295,65 @@ export default function SettingsPage() {
                 </button>
               </div>
             </>
+          )}
+
+          {/* Local AI tab */}
+          {activeTab === 'Local AI' && (
+            <Panel style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div>
+                <p style={sL}>Local model bridge</p>
+                <p style={{ fontSize: 12, color: T.text2, margin: '8px 0 0', lineHeight: 1.6 }}>
+                  Run <code style={{ fontFamily: 'monospace', color: T.green }}>npx abhyas-bridge run</code> on your machine,
+                  paste the printed URL here, then test. Stored only in this browser.
+                </p>
+              </div>
+
+              <FieldInput
+                label="Bridge URL"
+                value={bridgeUrl}
+                onChange={(e) => setBridgeUrl(e.target.value)}
+                placeholder="http://localhost:11435"
+              />
+
+              {bridgeHealth?.status === 'healthy' && bridgeHealth.models.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <label style={{ fontSize: 11, fontWeight: 600, color: T.text2, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                    Default model
+                  </label>
+                  <select
+                    value={bridgeModel}
+                    onChange={(e) => setBridgeModel(e.target.value)}
+                    style={{
+                      backgroundColor: T.cardHov, border: `1px solid ${T.border}`, borderRadius: 10,
+                      padding: '10px 14px', fontSize: 13, color: T.text0, outline: 'none',
+                      width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', cursor: 'pointer',
+                    }}
+                  >
+                    {bridgeHealth.models.map((m) => (
+                      <option key={m.name} value={m.name}>{m.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {bridgeMsg && (
+                <p style={{
+                  fontSize: 12, margin: 0,
+                  color: bridgeMsg.startsWith('Cannot') || bridgeMsg.includes('unhealthy') || bridgeMsg.startsWith('Enter') || bridgeMsg.startsWith('Test')
+                    ? '#f87171'
+                    : T.green,
+                }}>
+                  {bridgeMsg}
+                </p>
+              )}
+
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <OutlineBtn onClick={handleTestBridge}>
+                  {bridgeTesting ? 'Testing…' : 'Test connection'}
+                </OutlineBtn>
+                <GreenBtn onClick={handleSaveBridge}>Save Local AI defaults</GreenBtn>
+              </div>
+            </Panel>
           )}
 
           {/* Notifications tab */}
@@ -221,7 +388,7 @@ export default function SettingsPage() {
                   <div>
                     <span style={{ ...sL }}>Billing Level</span>
                     <h3 style={{ fontSize: 28, fontWeight: 900, color: T.text0, margin: '6px 0 0', textTransform: 'capitalize' }}>
-                      {mockUser.plan} Plan
+                      {profile?.plan || 'starter'} Plan
                     </h3>
                   </div>
                   <span style={{ fontSize: 9, fontFamily: 'monospace', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: T.green, backgroundColor: T.greenGhost, padding: '4px 10px', borderRadius: 999 }}>
