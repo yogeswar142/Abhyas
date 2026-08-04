@@ -79,4 +79,9 @@ If you're a candidate who wants early access, or an engineer who wants to contri
 
 ## License
 
-MIT
+[GNU Affero General Public License v3.0 (AGPL-3.0)](./LICENSE)
+
+This project is open-source software built to help candidates and students practice for free on their local devices. Under AGPL-3.0:
+- Anyone is free to use, modify, and host this software locally or for personal use.
+- Any company or individual offering a modified version of this software as a hosted service or commercial product **must publish their source code publicly under the same AGPL-3.0 license**.
+
