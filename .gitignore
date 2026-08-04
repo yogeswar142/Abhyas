@@ -40,3 +40,14 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 .dual-graph/
+
+# AI agent & IDE workspace files
+.gemini/
+.agent/
+.agents/
+gemini.md
+CLAUDE.md
+PLAN-STATUS.md
+Project-Blueprint.md
+*.png
+
