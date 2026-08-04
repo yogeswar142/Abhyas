@@ -39,19 +39,20 @@ We're not trying to simulate a friendly conversation. We're trying to simulate p
 
 ### Option 1: Using Docker (Recommended for Team Members)
 
-Run the app effortlessly without Node/dependency setup issues:
+Starts all services automatically in strict order (**1. Backend** → **2. Frontend** → **3. Package Bridge**):
 
 ```bash
 git clone https://github.com/yogeswar142/Abhyas.git
 cd Abhyas
 
-# Development mode (Hot-reloading enabled)
-docker compose -f docker-compose.dev.yml up
-
-# Production build mode
+# Start full multi-service stack (Backend on :4000, Frontend on :3000, Bridge on :11435)
 docker compose up --build
 ```
-Open `http://localhost:3000`.
+
+- **Frontend Web App**: `http://localhost:3000`
+- **Backend API**: `http://localhost:4000`
+- **Local Bridge Package**: `http://localhost:11435`
+
 
 ### Option 2: Using Node.js locally
 
