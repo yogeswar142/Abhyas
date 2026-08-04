@@ -43,13 +43,11 @@ services:
       dockerfile: Dockerfile
     container_name: abhyas-bridge
     restart: unless-stopped
-    ports:
-      - "11435:11435"
+    network_mode: host
     depends_on:
       frontend:
         condition: service_started
     environment:
       - ABHYAS_PORT=11435
-      - OLLAMA_URL=http://host.docker.internal:11434
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - OLLAMA_URL=http://127.0.0.1:11434
+
