@@ -1,13 +1,15 @@
 # Multi-stage Dockerfile for Next.js App
 
-# 1. Base image with Alpine Linux and Node 20
-FROM node:20-alpine AS base
+# 1. Base image with Alpine Linux and Node 22
+FROM node:22-alpine AS base
 WORKDIR /app
+
 
 # 2. Dependencies stage
 FROM base AS deps
-RUN apk add --no-libc6-compat
+RUN apk add --no-cache libc6-compat
 COPY package.json package-lock.json ./
+
 RUN npm ci
 
 # 3. Builder stage
