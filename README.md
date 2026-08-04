@@ -37,15 +37,34 @@ We're not trying to simulate a friendly conversation. We're trying to simulate p
 
 ## Running locally
 
+### Option 1: Using Docker (Recommended for Team Members)
+
+Run the app effortlessly without Node/dependency setup issues:
+
 ```bash
 git clone https://github.com/yogeswar142/Abhyas.git
 cd Abhyas
 
-# Static preview (landing page)
-python3 -m http.server 4321
-```
+# Development mode (Hot-reloading enabled)
+docker compose -f docker-compose.dev.yml up
 
-Open `http://localhost:4321`.
+# Production build mode
+docker compose up --build
+```
+Open `http://localhost:3000`.
+
+### Option 2: Using Node.js locally
+
+```bash
+git clone https://github.com/yogeswar142/Abhyas.git
+cd Abhyas
+
+npm install
+cp .env.local.example .env.local
+npm run dev
+```
+Open `http://localhost:3000`.
+
 
 ---
 
