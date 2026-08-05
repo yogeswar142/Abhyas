@@ -39,22 +39,35 @@ We're not trying to simulate a friendly conversation. We're trying to simulate p
 
 ### Option 1: Using Docker (Recommended for Team Members)
 
-Starts all services automatically in strict order (**1. Backend** → **2. Frontend** → **3. Package Bridge**):
+### 3. Run the App
 
+#### Step 1: Start Backend & Frontend via Docker
 ```bash
-git clone https://github.com/yogeswar142/Abhyas.git
-cd Abhyas
-
-# Start full multi-service stack (Backend on :4000, Frontend on :3000, Bridge on :11435)
-docker compose up --build
+docker compose up
 ```
+This runs:
+- **Backend (Hono)**: `http://localhost:4000`
+- **Frontend (Next.js)**: `http://localhost:3000`
 
-- **Frontend Web App**: `http://localhost:3000`
-- **Backend API**: `http://localhost:4000`
-- **Local Bridge Package**: `http://localhost:11435`
+#### Step 2: Start Ollama & Abhyas Local Bridge Manually
+Since `@abhyas/bridge` directly connects your browser with your local GPU/CPU hardware and interactive CLI model selection, run it natively on your host machine:
 
+1. **Start Ollama** (in a separate terminal or desktop app):
+   ```bash
+   ollama serve
+   ```
 
-### Option 2: Using Node.js locally
+2. **Start Abhyas Bridge**:
+   ```bash
+   cd packages/abhyas
+   npm run dev
+   ```
+   *Or build & run CLI:*
+   ```bash
+   npm run build && npx abhyas-bridge run
+   ```
+
+3. Open `http://localhost:3000`, paste the printed bridge URL (e.g. `http://localhost:11435`) during pre-session setup, and begin your interview! Using Node.js locally
 
 ```bash
 git clone https://github.com/yogeswar142/Abhyas.git

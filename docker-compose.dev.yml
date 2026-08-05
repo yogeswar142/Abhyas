@@ -36,18 +36,4 @@ services:
       - NODE_ENV=development
       - NEXT_PUBLIC_BACKEND_URL=http://localhost:4000
 
-  # 3. Package Service (Local Ollama Bridge - Depends on Frontend)
-  bridge:
-    build:
-      context: ./packages/abhyas
-      dockerfile: Dockerfile
-    container_name: abhyas-bridge
-    restart: unless-stopped
-    network_mode: host
-    depends_on:
-      frontend:
-        condition: service_started
-    environment:
-      - ABHYAS_PORT=11435
-      - OLLAMA_URL=http://127.0.0.1:11434
 

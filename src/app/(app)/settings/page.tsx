@@ -115,9 +115,11 @@ function OutlineBtn({ children, onClick }: { children: React.ReactNode; onClick?
   );
 }
 
+import { VoiceSettingsCard } from '@/components/settings/VoiceSettingsCard';
+
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 
-const TABS = ['Account', 'Local AI', 'Notifications', 'Privacy', 'Billing'] as const;
+const TABS = ['Account', 'Local AI', 'Voice Engine', 'Notifications', 'Privacy', 'Billing'] as const;
 type Tab = typeof TABS[number];
 
 // ── Page ─────────────────────────────────────────────────────────────────────
@@ -355,6 +357,9 @@ export default function SettingsPage() {
               </div>
             </Panel>
           )}
+
+          {/* Voice Engine tab */}
+          {activeTab === 'Voice Engine' && <VoiceSettingsCard />}
 
           {/* Notifications tab */}
           {activeTab === 'Notifications' && (

@@ -17,8 +17,11 @@
     "dev": "tsc && node dist/cli.js run"
   },
   "dependencies": {
+    "@types/ws": "^8.18.1",
     "cors": "^2.8.5",
-    "express": "^4.19.2"
+    "edge-tts": "^1.0.1",
+    "express": "^4.19.2",
+    "ws": "^8.21.2"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",

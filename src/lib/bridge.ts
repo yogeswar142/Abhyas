@@ -84,6 +84,7 @@ export interface InterviewChatParams {
   role: string;
   company: string;
   difficulty: string;
+  systemPrompt?: string;
   messages: { role: 'user' | 'assistant' | 'system'; content: string }[];
   signal?: AbortSignal;
   onToken?: (text: string) => void;
@@ -102,6 +103,7 @@ export async function streamInterviewChat(params: InterviewChatParams): Promise<
       role: params.role,
       company: params.company,
       difficulty: params.difficulty,
+      systemPrompt: params.systemPrompt,
       messages: params.messages,
     }),
   });

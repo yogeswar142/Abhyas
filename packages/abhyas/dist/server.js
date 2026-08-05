@@ -1,8 +1,9 @@
 import express from 'express';
 import cors from 'cors';
 import { detectOllama, ndjsonToSse, streamOllamaChat, chatOllamaOnce, warmOllamaModel, OLLAMA_KEEP_ALIVE, } from './ollama.js';
-import { buildInterviewerSystemPrompt, defaultGenerationOptions, buildTurnScorePrompt, parseTurnScores, buildClosingBlurbPrompt, pickClosingPreset, averageTurnScores, } from './prompts/interviewer.js';
+import { buildTurnScorePrompt, parseTurnScores, buildClosingBlurbPrompt, buildFullEvaluationPrompt, pickClosingPreset, averageTurnScores, } from './prompts/interviewer.js';
 import { log } from './logger.js';
+import { synthesizeEdgeTts } from './edgetts.js';
 const KEEP_ALIVE_MS = 4 * 60 * 1000;
 /** Periodically re-touch the selected model so Ollama does not unload it. */
 export function startModelKeepAlive(state) {
@@ -39,6 +40,24 @@ export function createBridgeApp(state) {
             const msg = err instanceof Error ? err.message : String(err);
             log.err(`warm: ${msg}`);
             return res.status(502).json({ error: 'Failed to warm interviewer' });
+        }
+    });
+    app.post('/tts/generate', async (req, res) => {
+        const { text, voice = 'en-US-AvaNeural', rate = '+0%', pitch = '+0Hz' } = req.body ?? {};
+        if (!text || typeof text !== 'string') {
+            return res.status(400).json({ error: 'Missing text parameter' });
+        }
+        log.info(`tts · voice: ${voice} · length: ${text.length} chars`);
+        try {
+            const audioBuffer = await synthesizeEdgeTts({ text, voice, rate, pitch });
+            res.setHeader('Content-Type', 'audio/mpeg');
+            res.setHeader('Content-Length', audioBuffer.length);
+            return res.send(audioBuffer);
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            log.err(`tts error: ${msg}`);
+            return res.status(502).json({ error: 'Failed to synthesize speech via Edge-TTS', detail: msg });
         }
     });
     app.get('/health', async (_req, res) => {
@@ -81,7 +100,7 @@ export function createBridgeApp(state) {
         pipeSseChat(res, state, { model, messages, options });
     });
     app.post('/interview/chat', (req, res) => {
-        const { model, messages, interviewType = 'custom', role = 'Software Engineer', company = 'Company', difficulty = 'medium', options, } = req.body ?? {};
+        const { model, messages, systemPrompt, interviewType = 'custom', difficulty = 'medium', options, } = req.body ?? {};
         if (!messages || !Array.isArray(messages)) {
             return res.status(400).json({ error: 'Missing messages array' });
         }
@@ -89,24 +108,22 @@ export function createBridgeApp(state) {
         if (!useModel) {
             return res.status(400).json({ error: 'No model selected. Restart bridge and pick a model.' });
         }
-        const system = buildInterviewerSystemPrompt({
-            interviewType,
-            role,
-            company,
-            difficulty,
-        });
         const stripped = messages.filter((m) => m && m.role !== 'system');
-        const fullMessages = [{ role: 'system', content: system }, ...stripped];
+        const fullMessages = systemPrompt
+            ? [{ role: 'system', content: String(systemPrompt) }, ...stripped]
+            : stripped;
         const gen = {
-            ...defaultGenerationOptions(difficulty),
+            temperature: difficulty === 'hard' ? 0.55 : 0.45,
+            top_p: 0.9,
+            num_predict: difficulty === 'hard' ? 200 : 160,
+            repeat_penalty: 1.15,
             ...(options && typeof options === 'object' ? options : {}),
         };
         log.info(`interview · ${useModel} · ${interviewType}/${difficulty}`);
         pipeSseChat(res, state, { model: useModel, messages: fullMessages, options: gen });
     });
-    /** Score one Q+A only (fast) — do not send full transcript. */
     app.post('/interview/score-turn', async (req, res) => {
-        const { model, question, answer, interviewType = 'custom', } = req.body ?? {};
+        const { model, question, answer, interviewType = 'custom', role = 'Software Engineer', company = 'a tech company', difficulty = 'medium', turnIndex = 1, } = req.body ?? {};
         if (!question || !answer) {
             return res.status(400).json({ error: 'Missing question or answer' });
         }
@@ -114,8 +131,13 @@ export function createBridgeApp(state) {
         if (!useModel) {
             return res.status(400).json({ error: 'No model selected' });
         }
-        const prompt = buildTurnScorePrompt(String(question), String(answer), String(interviewType));
-        log.info(`score-turn · ${useModel}`);
+        const prompt = buildTurnScorePrompt(String(question), String(answer), String(interviewType), {
+            role: String(role),
+            company: String(company),
+            difficulty: String(difficulty),
+            turnIndex: Number(turnIndex),
+        });
+        log.info(`score-turn · ${useModel} · turn ${turnIndex} · ${company}/${difficulty}`);
         try {
             const raw = await chatOllamaOnce(state.ollamaUrl, {
                 model: useModel,
@@ -125,20 +147,62 @@ export function createBridgeApp(state) {
                 ],
                 options: prompt.options,
             });
-            const scores = parseTurnScores(raw) ?? {
-                clarity: 74,
-                structure: 72,
-                confidence: 73,
-                depth: 71,
-            };
-            return res.json({ scores, raw });
+            const scores = parseTurnScores(raw);
+            if (!scores) {
+                log.warn(`score-turn: failed to parse JSON from model output: ${raw.slice(0, 100)}`);
+                return res.status(502).json({ error: 'Model returned unparseable score output', raw });
+            }
+            return res.json({ scores, reasoning: scores.reasoning ?? null, raw });
         }
         catch (err) {
             log.err(`score-turn: ${err instanceof Error ? err.message : String(err)}`);
             return res.status(502).json({ error: 'Failed to score turn' });
         }
     });
-    /** Premade closing + one short model performance sentence. */
+    app.post('/interview/evaluate', async (req, res) => {
+        const { model, transcript, interviewType = 'custom', role = 'Software Engineer', company = 'a tech company', difficulty = 'medium', } = req.body ?? {};
+        if (!Array.isArray(transcript) || transcript.length === 0) {
+            return res.status(400).json({ error: 'Missing or empty transcript array' });
+        }
+        const useModel = (typeof model === 'string' && model) || state.selectedModel;
+        if (!useModel) {
+            return res.status(400).json({ error: 'No model selected' });
+        }
+        const prompt = buildFullEvaluationPrompt({
+            transcript: transcript,
+            interviewType: String(interviewType),
+            role: String(role),
+            company: String(company),
+            difficulty: String(difficulty),
+        });
+        log.info(`evaluate · ${useModel} · ${transcript.length} turns · ${company}/${difficulty}`);
+        try {
+            const raw = await chatOllamaOnce(state.ollamaUrl, {
+                model: useModel,
+                messages: [
+                    { role: 'system', content: prompt.system },
+                    { role: 'user', content: prompt.user },
+                ],
+                options: prompt.options,
+            });
+            const match = raw.match(/\{[\s\S]*\}/);
+            if (!match) {
+                log.warn(`evaluate: no JSON found in model output`);
+                return res.status(502).json({ error: 'Model returned unparseable evaluation', raw });
+            }
+            try {
+                const evaluation = JSON.parse(match[0]);
+                return res.json({ evaluation, raw });
+            }
+            catch {
+                return res.status(502).json({ error: 'Failed to parse evaluation JSON', raw });
+            }
+        }
+        catch (err) {
+            log.err(`evaluate: ${err instanceof Error ? err.message : String(err)}`);
+            return res.status(502).json({ error: 'Failed to evaluate session' });
+        }
+    });
     app.post('/interview/closing', async (req, res) => {
         const { model, role = 'Software Engineer', company = 'Company', lastAnswer = '', turnScores = [], } = req.body ?? {};
         const useModel = (typeof model === 'string' && model) || state.selectedModel;

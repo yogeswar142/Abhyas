@@ -34,23 +34,8 @@ services:
       - .env.local
     environment:
       - NODE_ENV=development
+      # NEXT_PUBLIC_BACKEND_URL must be reachable from both browser (localhost) and SSR inside Docker (backend service name).
+      # For dev with volume mount, browser calls go through host — localhost:4000 works.
       - NEXT_PUBLIC_BACKEND_URL=http://localhost:4000
 
-  # 3. Package Service (Local Ollama Bridge - Depends on Frontend)
-  bridge:
-    build:
-      context: ./packages/abhyas
-      dockerfile: Dockerfile
-    container_name: abhyas-bridge
-    restart: unless-stopped
-    ports:
-      - "11435:11435"
-    depends_on:
-      frontend:
-        condition: service_started
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    environment:
-      - ABHYAS_PORT=11435
-      - OLLAMA_URL=http://host.docker.internal:11434
 
