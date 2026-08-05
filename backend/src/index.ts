@@ -23,6 +23,11 @@ app.use('*', cors({
 // Base healthz check
 app.get('/healthz', (c) => c.text('OK', 200));
 
+app.onError((err, c) => {
+  console.error('Unhandled Backend Error:', err);
+  return c.json({ error: err.message || 'Internal Server Error' }, 500);
+});
+
 // Register routes
 app.route('/api/profile', profileRouter);
 app.route('/api/interviews', interviewsRouter);

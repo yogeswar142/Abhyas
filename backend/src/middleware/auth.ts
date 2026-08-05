@@ -1,5 +1,5 @@
 import { MiddlewareHandler } from 'hono';
-import { getSupabaseClient } from '../lib/supabase.js';
+import { getAdminSupabaseClient } from '../lib/supabase.js';
 import type { User } from '@supabase/supabase-js';
 
 export interface AuthContextVariables {
@@ -14,11 +14,13 @@ export const authMiddleware: MiddlewareHandler<{ Variables: AuthContextVariables
   }
 
   const token = authHeader.split(' ')[1];
-  const supabase = getSupabaseClient();
 
-  const { data: { user }, error } = await supabase.auth.getUser(token);
+  // Use admin client (service role key if available) for reliable getUser() calls
+  const adminSupabase = getAdminSupabaseClient();
+  const { data: { user }, error } = await adminSupabase.auth.getUser(token);
 
   if (error || !user) {
+    console.error('Auth middleware: getUser failed:', error?.message);
     return c.json({ error: 'Unauthorized: Invalid session or expired token' }, 401);
   }
 

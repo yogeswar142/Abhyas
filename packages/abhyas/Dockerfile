@@ -2,8 +2,9 @@
 FROM node:22-alpine
 WORKDIR /app
 
+ENV NODE_ENV=development
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN NODE_ENV=development npm ci
 
 COPY . .
 
