@@ -84,44 +84,49 @@ async function cmdRun(flags: Map<string, string | boolean>) {
     process.env.OLLAMA_URL ||
     DEFAULT_OLLAMA_URL;
 
-  log.info('Checking Ollama…');
-  const detected = await detectOllama(ollamaUrl);
-  if (!detected.ok) {
-    log.err(detected.error ?? 'Ollama unreachable');
-    process.exit(1);
-  }
-  log.ok(`Ollama connected (${ollamaUrl})`);
-  log.info(`Models found: ${detected.models.length}`);
-
-  const names = detected.models.map((m) => m.name);
-  const flagModel = typeof flags.get('model') === 'string' ? (flags.get('model') as string) : undefined;
-  const selectedModel = await pickModel(names, flagModel || process.env.ABHYAS_MODEL);
-
+  // Find port first so server can always start
   const preferred =
     Number(flags.get('port') || process.env.ABHYAS_PORT || 11435) || 11435;
   let port = preferred;
   try {
     port = await findFreePort(preferred, 10);
-    if (port !== preferred) {
-      log.warn(`Port ${preferred} busy → using ${port}`);
-    } else {
-      log.ok(`Port ${port} free`);
-    }
+    if (port !== preferred) log.warn(`Port ${preferred} busy → using ${port}`);
+    else log.ok(`Port ${port} free`);
   } catch (err) {
     log.err(err instanceof Error ? err.message : String(err));
     process.exit(1);
   }
 
-  const state: BridgeState = {
-    ollamaUrl,
-    selectedModel,
-    port,
-  };
+  // Try Ollama — NEVER crash if it's not running. Server starts regardless.
+  // /health reports Ollama status live; /tts/generate always works.
+  log.info('Checking Ollama…');
+  const detected = await detectOllama(ollamaUrl);
+  let selectedModel = '';
 
+  if (!detected.ok) {
+    log.warn(detected.error ?? 'Ollama not reachable — TTS still works');
+    log.info('Start Ollama on the host to enable interview AI.');
+  } else {
+    log.ok(`Ollama connected (${ollamaUrl})`);
+    const names = detected.models.map((m) => m.name);
+    const flagModel = typeof flags.get('model') === 'string' ? (flags.get('model') as string) : undefined;
+    const envModel = process.env.ABHYAS_MODEL;
+    if (flagModel && names.includes(flagModel)) {
+      selectedModel = flagModel;
+    } else if (envModel && names.includes(envModel)) {
+      selectedModel = envModel;
+    } else if (names.length >= 1) {
+      // Non-interactive (Docker): auto-pick first available model
+      selectedModel = names[0];
+      log.ok(`Auto-selected model: ${selectedModel}${names.length > 1 ? ` (${names.length} available)` : ''}`);
+    }
+  }
+
+  const state: BridgeState = { ollamaUrl, selectedModel, port };
   const { url } = await listenBridge(state);
-  startModelKeepAlive(state);
-  log.banner(url, selectedModel);
-  log.info('Model keep-alive started (every 4m)');
+  if (selectedModel) startModelKeepAlive(state);
+  log.banner(url, selectedModel || '<TTS-only — start Ollama for interview AI>');
+  if (selectedModel) log.info('Model keep-alive started (every 4m)');
 }
 
 /** Start bridge in TTS-only mode — no Ollama required. */

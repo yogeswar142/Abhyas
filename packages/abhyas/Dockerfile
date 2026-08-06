@@ -17,5 +17,6 @@ EXPOSE 11435
 ENV ABHYAS_PORT=11435
 ENV OLLAMA_URL=http://host.docker.internal:11434
 
-# TTS-only mode: no Ollama required — only /tts/generate endpoint is served
-CMD ["node", "dist/cli.js", "run", "--tts-only", "--port", "11435"]
+# Full mode: serves Edge-TTS (/tts/generate) AND Ollama proxy (/interview/chat, /health).
+# TTS works even when Ollama is offline. Start Ollama on the host (localhost:11434) for interview AI.
+CMD ["node", "dist/cli.js", "run", "--port", "11435"]
