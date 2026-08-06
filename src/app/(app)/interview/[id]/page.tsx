@@ -19,6 +19,9 @@ import {
   type BridgeConfig,
   type TurnScores,
 } from '@/lib/bridge';
+import { speakText, stopSpeech } from '@/lib/audio';
+import { ttsManager } from '@/lib/tts/ttsManager';
+import { buildInterviewerSystemPrompt } from '@/lib/prompts';
 
 type SessionPhase = 'prep' | 'connecting' | 'live';
 
@@ -320,6 +323,15 @@ export default function ActiveSessionPage({ params }: { params: Promise<{ id: st
     let sawToken = false;
 
     try {
+      const systemPrompt = buildInterviewerSystemPrompt({
+        interviewType: interview.type,
+        role: interview.role,
+        company: interview.company,
+        difficulty: interview.difficulty,
+      });
+
+      const ttsStreamer = ttsManager.createSentenceStreamer();
+
       const full = await streamInterviewChat({
         bridgeUrl: cfg.bridgeUrl,
         model: cfg.model,
@@ -327,6 +339,7 @@ export default function ActiveSessionPage({ params }: { params: Promise<{ id: st
         role: interview.role,
         company: interview.company,
         difficulty: interview.difficulty,
+        systemPrompt,
         messages: toChatMessages(history),
         onToken: (t) => {
           if (!sawToken) {
@@ -334,8 +347,11 @@ export default function ActiveSessionPage({ params }: { params: Promise<{ id: st
             opts?.onFirstToken?.();
           }
           setStreamingText((prev) => prev + t);
+          ttsStreamer.pushToken(t);
         },
       });
+
+      ttsStreamer.flush();
 
       if (!full) throw new Error('Interviewer did not respond. Try again.');
 
@@ -1122,9 +1138,45 @@ export default function ActiveSessionPage({ params }: { params: Promise<{ id: st
                   {interview.status === 'analyzing' ? 'Analyzing session' : 'Live transcript'}
                 </span>
               </div>
-              <span style={{ fontSize: 10, fontFamily: 'monospace', fontWeight: 700, color: T.green, textTransform: 'uppercase' }}>
-                Question {Math.min(MAX_QUESTIONS, Math.max(1, currentQuestionNum))} of {MAX_QUESTIONS}
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <span style={{ fontSize: 10, fontFamily: 'monospace', fontWeight: 700, color: T.green, textTransform: 'uppercase' }}>
+                  Question {Math.min(MAX_QUESTIONS, Math.max(1, currentQuestionNum))} of {MAX_QUESTIONS}
+                </span>
+                {(() => {
+                  const lastQ = [...messages].reverse().find((m) => m.sender === 'interviewer')?.content;
+                  if (!lastQ || isInterviewerResponding) return null;
+                  return (
+                    <button
+                      onClick={() => {
+                        stopSpeech();
+                        speakText(lastQ);
+                      }}
+                      title="Replay last question audio"
+                      style={{
+                        fontSize: 10,
+                        fontFamily: 'monospace',
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                        color: T.green,
+                        backgroundColor: 'rgba(34,197,94,0.08)',
+                        border: '1px solid rgba(34,197,94,0.25)',
+                        borderRadius: 6,
+                        padding: '3px 8px',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4,
+                      }}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                        <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                      </svg>
+                      Repeat Question
+                    </button>
+                  );
+                })()}
+              </div>
             </div>
 
             <div style={{ flex: 1, overflowY: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>

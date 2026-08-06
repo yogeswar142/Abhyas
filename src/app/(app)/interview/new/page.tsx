@@ -150,6 +150,7 @@ export default function NewInterviewPage() {
   const [role, setRole] = useState('Senior Software Engineer');
   const [difficulty, setDifficulty] = useState('medium');
   const [duration, setDuration] = useState('45');
+  const [jobDescription, setJobDescription] = useState('');
   const [isStarting, setIsStarting] = useState(false);
 
   // Calibrate to user's targeted company & role once profile resolves
@@ -280,25 +281,46 @@ export default function NewInterviewPage() {
           <h2 style={{ fontSize: 14, fontWeight: 700, color: T.text0, margin: 0 }}>Role & Experience Calibration</h2>
         </div>
 
-        <Panel style={{ padding: 24, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-          <FieldInput label="Target Company" value={company} onChange={e => setCompany(e.target.value)} placeholder="e.g. Google, Meta, Stripe" />
-          <FieldInput label="Target Role Title" value={role} onChange={e => setRole(e.target.value)} placeholder="e.g. Senior Software Engineer" />
-          <FieldSelect
-            label="Difficulty / Seniority"
-            value={difficulty}
-            onChange={e => setDifficulty(e.target.value)}
-            options={[
-              { value: 'easy', label: 'Entry Level (L3 / Junior SDE)' },
-              { value: 'medium', label: 'Mid-Level (L4 / SDE II)' },
-              { value: 'hard', label: 'Senior / Staff (L5+)' },
-            ]}
-          />
-          <FieldSelect
-            label="Session Duration"
-            value={duration}
-            onChange={e => setDuration(e.target.value)}
-            options={SESSION_DURATIONS.map(d => ({ value: d.toString(), label: `${d} minutes — voice interactive` }))}
-          />
+        <Panel style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+            <FieldInput label="Target Company" value={company} onChange={e => setCompany(e.target.value)} placeholder="e.g. Google, Meta, Stripe" />
+            <FieldInput label="Target Role Title" value={role} onChange={e => setRole(e.target.value)} placeholder="e.g. Senior Software Engineer" />
+            <FieldSelect
+              label="Difficulty / Seniority"
+              value={difficulty}
+              onChange={e => setDifficulty(e.target.value)}
+              options={[
+                { value: 'easy', label: 'Entry Level (L3 / Junior SDE)' },
+                { value: 'medium', label: 'Mid-Level (L4 / SDE II)' },
+                { value: 'hard', label: 'Senior / Staff (L5+)' },
+              ]}
+            />
+            <FieldSelect
+              label="Session Duration"
+              value={duration}
+              onChange={e => setDuration(e.target.value)}
+              options={SESSION_DURATIONS.map(d => ({ value: d.toString(), label: `${d} minutes — voice interactive` }))}
+            />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <label style={{ fontSize: 11, fontWeight: 600, color: T.text2, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+              Job Description / Target Requirements (Optional)
+            </label>
+            <textarea
+              value={jobDescription}
+              onChange={e => setJobDescription(e.target.value)}
+              placeholder="Paste the job description or specific key requirements here to calibrate interviewer questions..."
+              rows={3}
+              style={{
+                backgroundColor: T.cardHov, border: `1px solid ${T.border}`, borderRadius: 10,
+                padding: '10px 14px', fontSize: 13, color: T.text0, outline: 'none',
+                width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', resize: 'vertical',
+                lineHeight: 1.5,
+              }}
+              onFocus={e => { e.target.style.borderColor = T.green; e.target.style.boxShadow = '0 0 0 3px rgba(34,197,94,0.12)'; }}
+              onBlur={e => { e.target.style.borderColor = T.border; e.target.style.boxShadow = 'none'; }}
+            />
+          </div>
         </Panel>
       </section>
 

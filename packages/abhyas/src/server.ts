@@ -9,8 +9,6 @@ import {
   OLLAMA_KEEP_ALIVE,
 } from './ollama.js';
 import {
-  buildInterviewerSystemPrompt,
-  defaultGenerationOptions,
   buildTurnScorePrompt,
   parseTurnScores,
   buildClosingBlurbPrompt,
@@ -21,6 +19,8 @@ import {
   type TranscriptMessage,
 } from './prompts/interviewer.js';
 import { log } from './logger.js';
+
+import { synthesizeEdgeTts } from './edgetts.js';
 
 export interface BridgeState {
   ollamaUrl: string;
@@ -71,6 +71,26 @@ export function createBridgeApp(state: BridgeState) {
     }
   });
 
+  app.post('/tts/generate', async (req, res) => {
+    const { text, voice = 'en-US-AvaNeural', rate = '+0%', pitch = '+0Hz' } = req.body ?? {};
+    if (!text || typeof text !== 'string') {
+      return res.status(400).json({ error: 'Missing text parameter' });
+    }
+
+    log.info(`tts · voice: ${voice} · length: ${text.length} chars`);
+
+    try {
+      const audioBuffer = await synthesizeEdgeTts({ text, voice, rate, pitch });
+      res.setHeader('Content-Type', 'audio/mpeg');
+      res.setHeader('Content-Length', audioBuffer.length);
+      return res.send(audioBuffer);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      log.err(`tts error: ${msg}`);
+      return res.status(502).json({ error: 'Failed to synthesize speech via Edge-TTS', detail: msg });
+    }
+  });
+
   app.get('/health', async (_req, res) => {
     const result = await detectOllama(state.ollamaUrl);
     if (!result.ok) {
@@ -117,9 +137,8 @@ export function createBridgeApp(state: BridgeState) {
     const {
       model,
       messages,
+      systemPrompt,
       interviewType = 'custom',
-      role = 'Software Engineer',
-      company = 'Company',
       difficulty = 'medium',
       options,
     } = req.body ?? {};
@@ -133,19 +152,18 @@ export function createBridgeApp(state: BridgeState) {
       return res.status(400).json({ error: 'No model selected. Restart bridge and pick a model.' });
     }
 
-    const system = buildInterviewerSystemPrompt({
-      interviewType,
-      role,
-      company,
-      difficulty,
-    });
-
     const stripped = messages.filter(
       (m: { role?: string }) => m && m.role !== 'system'
     );
-    const fullMessages = [{ role: 'system', content: system }, ...stripped];
+    const fullMessages = systemPrompt
+      ? [{ role: 'system', content: String(systemPrompt) }, ...stripped]
+      : stripped;
+
     const gen = {
-      ...defaultGenerationOptions(difficulty),
+      temperature: difficulty === 'hard' ? 0.55 : 0.45,
+      top_p: 0.9,
+      num_predict: difficulty === 'hard' ? 200 : 160,
+      repeat_penalty: 1.15,
       ...(options && typeof options === 'object' ? options : {}),
     };
 
@@ -153,7 +171,6 @@ export function createBridgeApp(state: BridgeState) {
     pipeSseChat(res, state, { model: useModel, messages: fullMessages, options: gen });
   });
 
-  /** Score one Q+A with full context (role, company, difficulty, turnIndex). */
   app.post('/interview/score-turn', async (req, res) => {
     const {
       model,
@@ -209,7 +226,6 @@ export function createBridgeApp(state: BridgeState) {
     }
   });
 
-  /** Full holistic session evaluation from complete transcript. */
   app.post('/interview/evaluate', async (req, res) => {
     const {
       model,
@@ -266,7 +282,6 @@ export function createBridgeApp(state: BridgeState) {
     }
   });
 
-  /** Premade closing + one short model performance sentence. */
   app.post('/interview/closing', async (req, res) => {
     const {
       model,
