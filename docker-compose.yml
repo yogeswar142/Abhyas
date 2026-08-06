@@ -14,7 +14,25 @@ services:
       - PORT=4000
       - NODE_ENV=development
 
-  # 2. Frontend Service (Next.js Web App - Depends on Backend)
+  # 2. Abhyas Bridge (Edge-TTS + Ollama proxy)
+  # Provides /tts/generate for high-quality neural TTS via Microsoft Edge-TTS.
+  # Also proxies local Ollama if you run it on the host machine.
+  bridge:
+    build:
+      context: ./packages/abhyas
+      dockerfile: Dockerfile
+    container_name: abhyas-bridge
+    restart: unless-stopped
+    ports:
+      - "11435:11435"
+    environment:
+      - PORT=11435
+      - OLLAMA_URL=http://host.docker.internal:11434
+      - NODE_ENV=development
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # 3. Frontend Service (Next.js Web App)
   frontend:
     build:
       context: .
@@ -25,6 +43,8 @@ services:
       - "3000:3000"
     depends_on:
       backend:
+        condition: service_started
+      bridge:
         condition: service_started
     volumes:
       - .:/app
@@ -37,5 +57,5 @@ services:
       # NEXT_PUBLIC_BACKEND_URL must be reachable from both browser (localhost) and SSR inside Docker (backend service name).
       # For dev with volume mount, browser calls go through host — localhost:4000 works.
       - NEXT_PUBLIC_BACKEND_URL=http://localhost:4000
-
-
+      # Bridge is exposed on localhost:11435 so the browser can reach it directly
+      - NEXT_PUBLIC_BRIDGE_URL=http://localhost:11435

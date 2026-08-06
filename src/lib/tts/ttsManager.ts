@@ -27,6 +27,11 @@ export class TTSManager {
       this.saveConfig(); // persist so next load starts with webspeech
       this.onBridgeOffline?.(() => { /* UI toast callback */ });
     };
+    // Auto-probe the bridge in background — if it's running, switch to Edge-TTS
+    // so Docker users get high-quality neural voices automatically
+    if (typeof window !== 'undefined') {
+      this.probeAndAutoConfigureBridge();
+    }
   }
 
   public static getInstance(): TTSManager {
@@ -94,6 +99,56 @@ export class TTSManager {
     } else {
       this.activeEngine = this.webSpeechEngine;
     }
+  }
+
+  /**
+   * Silently probe the bridge at startup. If it's running (e.g. via Docker),
+   * auto-switch to Edge-TTS so users get neural voices without manual setup.
+   * If unreachable, stays on webspeech. Never throws.
+   */
+  private async probeAndAutoConfigureBridge(): Promise<void> {
+    // Candidate URLs: env-configured first, then the default Docker-exposed port
+    const candidates = [
+      process.env.NEXT_PUBLIC_BRIDGE_URL || '',
+      'http://localhost:11435',
+    ].filter(Boolean);
+
+    for (const bridgeUrl of candidates) {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 1500); // 1.5s probe timeout
+        const res = await fetch(`${bridgeUrl}/health`, {
+          signal: controller.signal,
+          cache: 'no-store',
+        });
+        clearTimeout(timer);
+
+        if (res.ok) {
+          console.debug(`[TTSManager] Bridge detected at ${bridgeUrl} — switching to Edge-TTS`);
+          // Write bridge URL to localStorage so EdgeTTSEngine can find it
+          try {
+            const existing = localStorage.getItem('abhyas.bridge');
+            const parsed = existing ? JSON.parse(existing) : {};
+            localStorage.setItem('abhyas.bridge', JSON.stringify({
+              ...parsed,
+              bridgeUrl,
+            }));
+          } catch { /* ignore */ }
+
+          // Only switch to edge if user hasn't manually chosen webspeech
+          if (this.config.engine !== 'webspeech' || this.bridgeOfflineFired === false) {
+            this.config = { ...this.config, engine: 'edge', voiceId: this.config.voiceId || 'en-US-AvaNeural' };
+            this.activeEngine = this.edgeEngine;
+            this.bridgeOfflineFired = false; // reset so fallback can fire if bridge goes down
+            this.saveConfig();
+          }
+          return; // found a working bridge, done
+        }
+      } catch {
+        // Probe failed — bridge not at this URL, try next
+      }
+    }
+    console.debug('[TTSManager] No bridge detected — using Web Speech API');
   }
 
   public async getAvailableVoices(engineMode?: TTSEngineMode): Promise<TTSVoiceOption[]> {

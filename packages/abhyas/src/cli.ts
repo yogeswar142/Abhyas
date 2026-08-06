@@ -124,6 +124,32 @@ async function cmdRun(flags: Map<string, string | boolean>) {
   log.info('Model keep-alive started (every 4m)');
 }
 
+/** Start bridge in TTS-only mode — no Ollama required. */
+async function cmdRunTtsOnly(flags: Map<string, string | boolean>) {
+  const preferred = Number(flags.get('port') || process.env.ABHYAS_PORT || 11435) || 11435;
+  let port = preferred;
+  try {
+    port = await findFreePort(preferred, 10);
+    if (port !== preferred) log.warn(`Port ${preferred} busy → using ${port}`);
+    else log.ok(`Port ${port} free`);
+  } catch (err) {
+    log.err(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  }
+
+  const state: BridgeState = {
+    ollamaUrl: (typeof flags.get('ollama') === 'string' ? flags.get('ollama') as string : null)
+      || process.env.OLLAMA_URL
+      || DEFAULT_OLLAMA_URL,
+    selectedModel: '',
+    port,
+  };
+
+  const { url } = await listenBridge(state);
+  log.ok(`TTS-only bridge running at ${url}/tts/generate`);
+  log.info('Ollama endpoints are disabled in TTS-only mode.');
+}
+
 async function main() {
   const { cmd, flags } = parseArgs(process.argv);
   const ollamaUrl =
@@ -136,6 +162,7 @@ async function main() {
 Abhyas local bridge
 
   abhyas-bridge run [--port 11435] [--model name] [--ollama http://127.0.0.1:11434]
+  abhyas-bridge run --tts-only [--port 11435]   (start without Ollama — TTS only)
   abhyas-bridge health
   abhyas-bridge models
 
@@ -146,7 +173,11 @@ Paste the printed URL into the Abhyas website Local AI settings.
 
   if (cmd === 'health') return cmdHealth(ollamaUrl);
   if (cmd === 'models') return cmdModels(ollamaUrl);
-  if (cmd === 'run') return cmdRun(flags);
+  if (cmd === 'run') {
+    // --tts-only: skip Ollama requirement, only start TTS endpoint
+    if (flags.get('tts-only')) return cmdRunTtsOnly(flags);
+    return cmdRun(flags);
+  }
 
   log.err(`Unknown command: ${cmd}`);
   process.exit(1);
