@@ -22,6 +22,88 @@ export class EdgeTTSEngine implements ITTSEngine {
     return EDGE_NEURAL_VOICES;
   }
 
+  public async prefetchAudio(
+    text: string,
+    config: TTSConfig,
+    signal?: AbortSignal
+  ): Promise<HTMLAudioElement | null> {
+    const cleaned = text.trim();
+    if (!cleaned) return null;
+
+    try {
+      const bridgeUrl = this.getBridgeUrl();
+      const voice = config.voiceId || 'en-US-AvaNeural';
+      const rateNum = config.rate ?? 1.3;
+      const ratePct = Math.round((rateNum - 1.0) * 100);
+      const rate = `${ratePct >= 0 ? '+' : ''}${ratePct}%`;
+
+      const res = await fetch(`${bridgeUrl}/tts/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal,
+        body: JSON.stringify({
+          text: cleaned,
+          voice,
+          rate: rate.startsWith('-') || rate.startsWith('+') ? rate : `+${rate}`,
+          pitch: '+0Hz',
+        }),
+      });
+
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      if (signal?.aborted) return null;
+
+      const audioUrl = URL.createObjectURL(blob);
+      const audio = new Audio(audioUrl);
+      audio.volume = config.volume ?? 1.0;
+      audio.preload = 'auto';
+      return audio;
+    } catch {
+      return null;
+    }
+  }
+
+  public playAudioElement(
+    audio: HTMLAudioElement,
+    options?: SpeakOptions
+  ): Promise<void> {
+    return new Promise((resolve) => {
+      this.stop();
+      const signal = options?.signal;
+
+      if (signal?.aborted) {
+        options?.onEnd?.();
+        return resolve();
+      }
+
+      this.activeAudio = audio;
+
+      audio.onplay = () => {
+        options?.onStart?.();
+      };
+
+      audio.onended = () => {
+        this.activeAudio = null;
+        options?.onEnd?.();
+        resolve();
+      };
+
+      audio.onerror = (err) => {
+        this.activeAudio = null;
+        options?.onError?.(err);
+        options?.onEnd?.();
+        resolve();
+      };
+
+      audio.play().catch((err) => {
+        this.activeAudio = null;
+        options?.onError?.(err);
+        options?.onEnd?.();
+        resolve();
+      });
+    });
+  }
+
   public speak(text: string, config: TTSConfig, options?: SpeakOptions): Promise<void> {
     return new Promise(async (resolve) => {
       this.stop();
@@ -46,57 +128,13 @@ export class EdgeTTSEngine implements ITTSEngine {
       });
 
       try {
-        const bridgeUrl = this.getBridgeUrl();
-        const voice = config.voiceId || 'en-US-AvaNeural';
-        const rate = `${Math.round((config.rate - 1.0) * 100)}%`;
-
-        const res = await fetch(`${bridgeUrl}/tts/generate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          signal,
-          body: JSON.stringify({
-            text: cleaned,
-            voice,
-            rate: rate.startsWith('-') || rate.startsWith('+') ? rate : `+${rate}`,
-            pitch: '+0Hz',
-          }),
-        });
-
-        if (!res.ok) {
-          throw new Error(`Edge-TTS bridge endpoint returned ${res.status}`);
-        }
-
-        const blob = await res.blob();
-        if (signal.aborted) {
+        const audio = await this.prefetchAudio(cleaned, config, signal);
+        if (!audio || signal.aborted) {
           options?.onEnd?.();
           return resolve();
         }
 
-        const audioUrl = URL.createObjectURL(blob);
-        const audio = new Audio(audioUrl);
-        audio.volume = config.volume ?? 1.0;
-        this.activeAudio = audio;
-
-        audio.onplay = () => {
-          options?.onStart?.();
-        };
-
-        audio.onended = () => {
-          URL.revokeObjectURL(audioUrl);
-          this.activeAudio = null;
-          options?.onEnd?.();
-          resolve();
-        };
-
-        audio.onerror = (err) => {
-          URL.revokeObjectURL(audioUrl);
-          this.activeAudio = null;
-          options?.onError?.(err);
-          options?.onEnd?.();
-          resolve();
-        };
-
-        await audio.play();
+        await this.playAudioElement(audio, options);
       } catch (err) {
         if ((err as Error).name === 'AbortError') {
           options?.onEnd?.();

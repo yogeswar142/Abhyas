@@ -155,14 +155,18 @@ export function createBridgeApp(state: BridgeState) {
     const stripped = messages.filter(
       (m: { role?: string }) => m && m.role !== 'system'
     );
+    const userMessages =
+      stripped.length === 0
+        ? [{ role: 'user', content: 'Begin the interview. Introduce yourself briefly and ask the first question.' }]
+        : stripped;
     const fullMessages = systemPrompt
-      ? [{ role: 'system', content: String(systemPrompt) }, ...stripped]
-      : stripped;
+      ? [{ role: 'system', content: String(systemPrompt) }, ...userMessages]
+      : userMessages;
 
     const gen = {
-      temperature: difficulty === 'hard' ? 0.55 : 0.45,
+      temperature: difficulty === 'hard' ? 0.5 : 0.4,
       top_p: 0.9,
-      num_predict: difficulty === 'hard' ? 200 : 160,
+      num_predict: 85,
       repeat_penalty: 1.15,
       ...(options && typeof options === 'object' ? options : {}),
     };

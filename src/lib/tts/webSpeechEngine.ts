@@ -87,6 +87,9 @@ export class WebSpeechEngine implements ITTSEngine {
 
       this.activeUtterance = utterance;
       try {
+        if (window.speechSynthesis.paused) {
+          window.speechSynthesis.resume();
+        }
         window.speechSynthesis.speak(utterance);
       } catch (err) {
         this.activeUtterance = null;

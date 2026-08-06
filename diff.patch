@@ -1,0 +1,2512 @@
+diff --git a/Dockerfile.dev b/Dockerfile.dev
+index 292ee6a..65368cb 100644
+--- a/Dockerfile.dev
++++ b/Dockerfile.dev
+@@ -1,6 +1,7 @@
+ FROM node:22-alpine
+ WORKDIR /app
+ 
++RUN apk add --no-cache libc6-compat
+ 
+ COPY package.json package-lock.json ./
+ RUN npm ci
+diff --git a/README.md b/README.md
+index 4caf160..f2d30fd 100644
+--- a/README.md
++++ b/README.md
+@@ -39,22 +39,35 @@ We're not trying to simulate a friendly conversation. We're trying to simulate p
+ 
+ ### Option 1: Using Docker (Recommended for Team Members)
+ 
+-Starts all services automatically in strict order (**1. Backend** → **2. Frontend** → **3. Package Bridge**):
++### 3. Run the App
+ 
++#### Step 1: Start Backend & Frontend via Docker
+ ```bash
+-git clone https://github.com/yogeswar142/Abhyas.git
+-cd Abhyas
+-
+-# Start full multi-service stack (Backend on :4000, Frontend on :3000, Bridge on :11435)
+-docker compose up --build
++docker compose up
+ ```
+-
+-- **Frontend Web App**: `http://localhost:3000`
+-- **Backend API**: `http://localhost:4000`
+-- **Local Bridge Package**: `http://localhost:11435`
+-
+-
+-### Option 2: Using Node.js locally
++This runs:
++- **Backend (Hono)**: `http://localhost:4000`
++- **Frontend (Next.js)**: `http://localhost:3000`
++
++#### Step 2: Start Ollama & Abhyas Local Bridge Manually
++Since `@abhyas/bridge` directly connects your browser with your local GPU/CPU hardware and interactive CLI model selection, run it natively on your host machine:
++
++1. **Start Ollama** (in a separate terminal or desktop app):
++   ```bash
++   ollama serve
++   ```
++
++2. **Start Abhyas Bridge**:
++   ```bash
++   cd packages/abhyas
++   npm run dev
++   ```
++   *Or build & run CLI:*
++   ```bash
++   npm run build && npx abhyas-bridge run
++   ```
++
++3. Open `http://localhost:3000`, paste the printed bridge URL (e.g. `http://localhost:11435`) during pre-session setup, and begin your interview! Using Node.js locally
+ 
+ ```bash
+ git clone https://github.com/yogeswar142/Abhyas.git
+diff --git a/docker-compose.dev.yml b/docker-compose.dev.yml
+index e3eec78..53ce016 100644
+--- a/docker-compose.dev.yml
++++ b/docker-compose.dev.yml
+@@ -36,18 +36,4 @@ services:
+       - NODE_ENV=development
+       - NEXT_PUBLIC_BACKEND_URL=http://localhost:4000
+ 
+-  # 3. Package Service (Local Ollama Bridge - Depends on Frontend)
+-  bridge:
+-    build:
+-      context: ./packages/abhyas
+-      dockerfile: Dockerfile
+-    container_name: abhyas-bridge
+-    restart: unless-stopped
+-    network_mode: host
+-    depends_on:
+-      frontend:
+-        condition: service_started
+-    environment:
+-      - ABHYAS_PORT=11435
+-      - OLLAMA_URL=http://127.0.0.1:11434
+ 
+diff --git a/docker-compose.yml b/docker-compose.yml
+index 75d342a..89787a9 100644
+--- a/docker-compose.yml
++++ b/docker-compose.yml
+@@ -34,23 +34,8 @@ services:
+       - .env.local
+     environment:
+       - NODE_ENV=development
++      # NEXT_PUBLIC_BACKEND_URL must be reachable from both browser (localhost) and SSR inside Docker (backend service name).
++      # For dev with volume mount, browser calls go through host — localhost:4000 works.
+       - NEXT_PUBLIC_BACKEND_URL=http://localhost:4000
+ 
+-  # 3. Package Service (Local Ollama Bridge - Depends on Frontend)
+-  bridge:
+-    build:
+-      context: ./packages/abhyas
+-      dockerfile: Dockerfile
+-    container_name: abhyas-bridge
+-    restart: unless-stopped
+-    ports:
+-      - "11435:11435"
+-    depends_on:
+-      frontend:
+-        condition: service_started
+-    extra_hosts:
+-      - "host.docker.internal:host-gateway"
+-    environment:
+-      - ABHYAS_PORT=11435
+-      - OLLAMA_URL=http://host.docker.internal:11434
+ 
+diff --git a/packages/abhyas/dist/edgetts.d.ts b/packages/abhyas/dist/edgetts.d.ts
+new file mode 100644
+index 0000000..1a421d6
+--- /dev/null
++++ b/packages/abhyas/dist/edgetts.d.ts
+@@ -0,0 +1,9 @@
++export interface EdgeTtsOptions {
++    text: string;
++    voice?: string;
++    rate?: string;
++    pitch?: string;
++    volume?: string;
++}
++/** Synthesize audio buffer using Microsoft Edge Read Aloud WebSocket API. */
++export declare function synthesizeEdgeTts(options: EdgeTtsOptions): Promise<Buffer>;
+diff --git a/packages/abhyas/dist/edgetts.js b/packages/abhyas/dist/edgetts.js
+new file mode 100644
+index 0000000..1b25143
+--- /dev/null
++++ b/packages/abhyas/dist/edgetts.js
+@@ -0,0 +1,106 @@
++import { WebSocket } from 'ws';
++const TRUSTED_CLIENT_TOKEN = '6A5AA1D4EA01470597E3F5183064AF59';
++function generateRequestId() {
++    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
++        const r = (Math.random() * 16) | 0;
++        const v = c === 'x' ? r : (r & 0x3) | 0x8;
++        return v.toString(16);
++    });
++}
++/** Synthesize audio buffer using Microsoft Edge Read Aloud WebSocket API. */
++export async function synthesizeEdgeTts(options) {
++    const voice = options.voice || 'en-US-AvaNeural';
++    const rate = options.rate || '+0%';
++    const pitch = options.pitch || '+0Hz';
++    const volume = options.volume || '+0%';
++    const requestId = generateRequestId();
++    const wsUrl = `wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=${TRUSTED_CLIENT_TOKEN}&Sec-MS-GEC=1&Sec-MS-GEC-Version=1-130.0.2849.68`;
++    return new Promise((resolve, reject) => {
++        const ws = new WebSocket(wsUrl, {
++            headers: {
++                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0',
++                'Accept-Encoding': 'gzip, deflate, br',
++                'Accept-Language': 'en-US,en;q=0.9',
++                Pragma: 'no-cache',
++            },
++        });
++        const audioBuffers = [];
++        let isCompleted = false;
++        const timeoutTimer = setTimeout(() => {
++            if (!isCompleted) {
++                isCompleted = true;
++                ws.close();
++                reject(new Error('Edge-TTS websocket request timed out'));
++            }
++        }, 12000);
++        ws.on('open', () => {
++            const configHeader = `X-Timestamp:${new Date().toISOString()}\r\n` +
++                `Content-Type:application/json; charset=utf-8\r\n` +
++                `Path:speech.config\r\n\r\n` +
++                JSON.stringify({
++                    context: {
++                        synthesis: {
++                            audio: {
++                                metadataversion: 'A2Mv1',
++                                wordmatchingmode: 'MicrosoftServer',
++                            },
++                        },
++                    },
++                });
++            ws.send(configHeader);
++            const ssml = `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'>` +
++                `<voice name='${voice}'>` +
++                `<prosody pitch='${pitch}' rate='${rate}' volume='${volume}'>` +
++                `${options.text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}` +
++                `</prosody>` +
++                `</voice>` +
++                `</speak>`;
++            const ssmlHeader = `X-RequestId:${requestId}\r\n` +
++                `Content-Type:application/ssml+xml\r\n` +
++                `Path:ssml\r\n\r\n` +
++                ssml;
++            ws.send(ssmlHeader);
++        });
++        ws.on('message', (data, isBinary) => {
++            if (isBinary) {
++                const buffer = Buffer.from(data);
++                // Header length is encoded in the first 2 bytes as BigEndian unsigned int
++                if (buffer.length > 2) {
++                    const headerLength = buffer.readUInt16BE(0);
++                    const audioChunk = buffer.subarray(2 + headerLength);
++                    if (audioChunk.length > 0) {
++                        audioBuffers.push(audioChunk);
++                    }
++                }
++            }
++            else {
++                const text = data.toString('utf8');
++                if (text.includes('Path:turn.end')) {
++                    isCompleted = true;
++                    clearTimeout(timeoutTimer);
++                    ws.close();
++                    resolve(Buffer.concat(audioBuffers));
++                }
++            }
++        });
++        ws.on('error', (err) => {
++            if (!isCompleted) {
++                isCompleted = true;
++                clearTimeout(timeoutTimer);
++                reject(err);
++            }
++        });
++        ws.on('close', () => {
++            if (!isCompleted) {
++                isCompleted = true;
++                clearTimeout(timeoutTimer);
++                if (audioBuffers.length > 0) {
++                    resolve(Buffer.concat(audioBuffers));
++                }
++                else {
++                    reject(new Error('Edge-TTS connection closed before receiving audio'));
++                }
++            }
++        });
++    });
++}
+diff --git a/packages/abhyas/dist/prompts/interviewer.d.ts b/packages/abhyas/dist/prompts/interviewer.d.ts
+index 0b31e9b..c06ad63 100644
+--- a/packages/abhyas/dist/prompts/interviewer.d.ts
++++ b/packages/abhyas/dist/prompts/interviewer.d.ts
+@@ -6,26 +6,54 @@ export interface InterviewPromptInput {
+     company: string;
+     difficulty: Difficulty | string;
+ }
+-/** Short system prompt that keeps local models from rambling. */
+-export declare function buildInterviewerSystemPrompt(input: InterviewPromptInput): string;
+-/** Generation options tuned for small local models (Qwen 3B–4B class). */
+-export declare function defaultGenerationOptions(difficulty?: string): Record<string, number>;
+ export interface TurnScores {
+     clarity: number;
+     structure: number;
+     confidence: number;
+     depth: number;
+ }
+-/** Tiny per-turn eval — one Q+A only, JSON only. */
+-export declare function buildTurnScorePrompt(question: string, answer: string, interviewType: string): {
++export interface TurnScoresWithReasoning extends TurnScores {
++    reasoning?: string;
++}
++export interface EvaluationReport {
++    scores: {
++        clarity: number;
++        structure: number;
++        confidence: number;
++        depth: number;
++        communication: number;
++        technical_accuracy: number;
++    };
++    strengths: string[];
++    improvements: string[];
++    standout_moment: string;
++    critical_miss: string;
++    overall_verdict: 'Strong Hire' | 'Hire' | 'No Hire' | 'Strong No Hire';
++    summary: string;
++}
++/**
++ * Build the interviewer system prompt — rich, specific, and calibrated
++ * to the interview type, difficulty, company, and role.
++ */
++export declare function buildInterviewerSystemPrompt(input: InterviewPromptInput): string;
++export declare function defaultGenerationOptions(difficulty?: string): Record<string, number>;
++/**
++ * Build the per-turn scoring prompt with a fully anchored rubric
++ * and calibration context so the model can give consistent, fair scores.
++ */
++export declare function buildTurnScorePrompt(question: string, answer: string, interviewType: string, opts?: {
++    role?: string;
++    company?: string;
++    difficulty?: string;
++    turnIndex?: number;
++}): {
+     system: string;
+     user: string;
+     options: Record<string, number>;
+ };
+-export declare function parseTurnScores(raw: string): TurnScores | null;
++export declare function parseTurnScores(raw: string): TurnScoresWithReasoning | null;
+ export declare function averageTurnScores(turns: TurnScores[]): TurnScores;
+ export declare function pickClosingPreset(avgOverall: number): string;
+-/** One short performance sentence — not a full report. */
+ export declare function buildClosingBlurbPrompt(input: {
+     role: string;
+     company: string;
+@@ -36,3 +64,18 @@ export declare function buildClosingBlurbPrompt(input: {
+     user: string;
+     options: Record<string, number>;
+ };
++export interface TranscriptMessage {
++    role: 'interviewer' | 'candidate';
++    content: string;
++}
++export declare function buildFullEvaluationPrompt(input: {
++    transcript: TranscriptMessage[];
++    interviewType: string;
++    role: string;
++    company: string;
++    difficulty: string;
++}): {
++    system: string;
++    user: string;
++    options: Record<string, number>;
++};
+diff --git a/packages/abhyas/dist/prompts/interviewer.js b/packages/abhyas/dist/prompts/interviewer.js
+index cc8e9cd..b57c274 100644
+--- a/packages/abhyas/dist/prompts/interviewer.js
++++ b/packages/abhyas/dist/prompts/interviewer.js
+@@ -1,57 +1,207 @@
++// ---------------------------------------------------------------------------
++// Company calibration
++// ---------------------------------------------------------------------------
++const COMPANY_CALIBRATION = {
++    Google: 'Google sets an exceptionally high bar. Expect candidates to demonstrate ownership, handle ambiguity at scale, and show Googleyness. Generic textbook answers score 60–70. Only answers with concrete metrics, genuine personal insight, and sophisticated trade-off reasoning score 85+.',
++    Meta: 'Meta values speed, impact, and concrete metrics above all. Look for "move fast" mindset, explicit impact numbers, and direct communication. Hedging or over-qualifying language lowers confidence scores.',
++    Amazon: 'Amazon interviews are LP-heavy. Evaluate explicitly against Leadership Principles: Customer Obsession, Ownership, Bias for Action, Dive Deep. Answers without a clear LP alignment score lower on structure.',
++    Microsoft: 'Microsoft values growth mindset, inclusive collaboration, and clarity of thinking. Look for self-awareness, learning from failure, and cross-functional empathy.',
++    Stripe: 'Stripe values rigorous thinking, user empathy, and systems mastery. Expect precision in technical answers and clear user-centric reasoning in product decisions.',
++    default: 'Standard tier-1 tech company calibration. Answers should be clear, structured, and substantiated with real examples.',
++};
++function getCompanyCalibration(company) {
++    for (const key of Object.keys(COMPANY_CALIBRATION)) {
++        if (key !== 'default' && company.toLowerCase().includes(key.toLowerCase())) {
++            return COMPANY_CALIBRATION[key];
++        }
++    }
++    return COMPANY_CALIBRATION.default;
++}
++// ---------------------------------------------------------------------------
++// Interviewer system prompt
++// ---------------------------------------------------------------------------
+ const TYPE_FOCUS = {
+-    behavioral: 'Focus on behavioral / soft-skill questions (STAR: Situation, Task, Action, Result). Probe ownership, conflict, and impact.',
+-    'system-design': 'Focus on system design: requirements, APIs, data model, scaling, trade-offs. Ask one design problem at a time.',
+-    technical: 'Focus on technical depth: algorithms, debugging, code quality, production systems. Prefer concrete scenarios over trivia.',
+-    product: 'Focus on product sense: metrics, prioritization, user problems, trade-offs between engineering and business.',
+-    custom: 'Run a general mock interview tailored to the role. Mix light technical and behavioral questions as needed.',
++    behavioral: `You are a senior hiring manager conducting a behavioral interview. Focus on: ownership, conflict resolution, technical leadership, impact at scale, failure & learning, collaboration under pressure.
++
++Ask rich, specific STAR-format questions. Good examples:
++- "Tell me about a time you strongly disagreed with your tech lead on an architecture decision — what did you do and what was the outcome?"
++- "Describe a project that failed or missed its deadline. What caused it, and what would you do differently?"
++- "Walk me through a time you had to influence stakeholders without direct authority."
++
++Follow-up rules:
++- If the answer is vague: "Can you be more specific? What did YOU personally do vs what the team did?"
++- If no outcome is given: "What was the measurable impact — in numbers, timelines, or business outcomes?"
++- If the story is too short: "That's interesting — can you walk me through the exact steps you took?"`,
++    'system-design': `You are a principal engineer conducting a system design interview. Ask ONE design problem at the start and drill deep through the session.
++
++Great opening problems:
++- "Design a URL shortener that handles 10 billion URLs and 100K reads per second."
++- "Design the notification system for a social app with 500 million daily active users."
++- "Design a distributed rate limiter used across 50 microservices."
++
++Drill-down follow-ups:
++- "Walk me through your data model — tables, indexes, key fields."
++- "What happens when your primary database goes down? How does the system recover?"
++- "You mentioned caching — what's your eviction strategy, and how do you handle cache invalidation at scale?"
++- "How does this design change if we need to support 10x current scale?"
++- "What are the top 3 failure modes in your design?"`,
++    technical: `You are a staff engineer conducting a technical interview. Ask concrete, scenario-based questions — NOT leetcode recitations or trivia.
++
++Focus areas: debugging production issues, code design trade-offs, API design, performance profiling, reliability patterns.
++
++Good question examples:
++- "Your API latency jumped from 200ms to 3 seconds overnight. No deployments happened. Walk me through your investigation."
++- "How would you design a rate-limiting library that works across 50 services without a central bottleneck?"
++- "You're reviewing a PR that passes all tests but you feel is wrong. How do you approach this?"
++- "Explain a production incident you personally debugged. What was the root cause and how did you find it?"
++
++Follow-up sharply:
++- "You said you'd add caching — what's the TTL, eviction policy, and what happens during a cache miss storm?"
++- "How would this approach change in a distributed environment with eventual consistency?"`,
++    product: `You are a senior product manager or product-focused interviewer. Ask about metrics, prioritization, user problems, and trade-offs between business and engineering.
++
++Focus areas: defining success metrics, feature prioritization, user empathy, competitive analysis, building with constraints.
++
++Good question examples:
++- "How would you prioritize features for a new social media feed if you had only 3 engineers for 2 months?"
++- "A key metric dropped 15% last week. Walk me through how you'd investigate and respond."
++- "How would you decide whether to build a feature vs buy vs partner for a core product capability?"
++- "Design a new feature for [product] that would increase retention by 20%."
++
++Follow-up on vague answers:
++- "What's the specific metric you'd use to measure success here?"
++- "Who exactly is the target user, and what problem does this solve for them specifically?"`,
++    custom: `You are a professional interviewer conducting a well-rounded mock interview tailored to the candidate's role. Mix behavioral questions (60%) with light technical or product questions (40%) depending on the role.
++
++Start with a brief intro, then alternate between deeper behavioral questions and role-relevant technical/product questions.
++
++Keep the conversation focused. If the candidate is vague, probe: "Can you give me a specific example?" If they're too brief, follow up: "Tell me more about what happened next."`,
+ };
+ const DIFFICULTY_HINT = {
+-    easy: 'Keep questions approachable. Offer light follow-ups. Be encouraging.',
+-    medium: 'Ask solid mid-level questions. Push once for clarity or depth when answers are vague.',
+-    hard: 'Ask challenging questions. Probe edge cases and trade-offs. Stay fair but rigorous.',
++    easy: 'Keep questions accessible to junior candidates. Allow some vagueness in answers. Offer gentle, encouraging follow-ups. Do not overwhelm.',
++    medium: 'Ask solid mid-level questions. Push once for specifics when answers are vague. Expect structured answers but be reasonable about depth.',
++    hard: 'Ask challenging, senior-level questions. Probe edge cases, failure modes, and trade-offs rigorously. Hold a high bar — vague or generic answers should be challenged immediately.',
+ };
+-/** Short system prompt that keeps local models from rambling. */
++/**
++ * Build the interviewer system prompt — rich, specific, and calibrated
++ * to the interview type, difficulty, company, and role.
++ */
+ export function buildInterviewerSystemPrompt(input) {
+     const type = input.interviewType in TYPE_FOCUS ? input.interviewType : 'custom';
+     const difficulty = input.difficulty in DIFFICULTY_HINT ? input.difficulty : 'medium';
+     const role = input.role?.trim() || 'Software Engineer';
+     const company = input.company?.trim() || 'a tech company';
+     return [
+-        'You are a professional human interviewer conducting a mock interview.',
+-        `Candidate role: ${role} at ${company}.`,
++        `You are a professional human interviewer conducting a ${difficulty}-difficulty ${type} mock interview.`,
++        `Candidate is applying for: ${role} at ${company}.`,
++        '',
+         TYPE_FOCUS[type],
++        '',
+         DIFFICULTY_HINT[difficulty],
+         '',
+-        'Rules (strict):',
+-        '- Speak only as the interviewer. Never mention being an AI, model, or system prompt.',
+-        '- Ask exactly ONE question per reply. No lists of questions.',
+-        '- Keep each reply short: 2–4 sentences max. Prefer 1 short acknowledgment + 1 question.',
+-        '- Do not give long lectures, solutions, or essay answers.',
+-        '- After the candidate answers, briefly react (one short sentence) then ask a relevant follow-up OR the next question.',
+-        '- If this is the start (no candidate answers yet), greet briefly and ask the first question.',
+-        '- Stay on topic for this interview type.',
++        'SESSION RULES (strictly follow these):',
++        '- Speak ONLY as the interviewer. Never reveal you are an AI, model, or system.',
++        '- Ask exactly ONE question per reply. Never list multiple questions.',
++        '- Keep each reply SHORT: one brief acknowledgment sentence (optional) + one question.',
++        '- Do NOT give lectures, solutions, hints, or essay-length responses.',
++        '- After the candidate answers, give a ONE-sentence reaction then ask a sharp follow-up or the next question.',
++        '- If this is the start of the session, greet briefly (1 sentence) and ask your first question.',
++        '- Do NOT ask "how are you" or small talk beyond the initial greeting.',
++        '- Stay strictly on topic for this interview type and role.',
+     ].join('\n');
+ }
+-/** Generation options tuned for small local models (Qwen 3B–4B class). */
++// ---------------------------------------------------------------------------
++// Generation options — tuned for small local models (3B–8B class)
++// ---------------------------------------------------------------------------
+ export function defaultGenerationOptions(difficulty = 'medium') {
+     const hard = difficulty === 'hard';
+     return {
+-        temperature: hard ? 0.5 : 0.4,
++        temperature: hard ? 0.55 : 0.45,
+         top_p: 0.9,
+-        num_predict: hard ? 180 : 140,
++        num_predict: hard ? 200 : 160,
+         repeat_penalty: 1.15,
+     };
+ }
+-/** Tiny per-turn eval — one Q+A only, JSON only. */
+-export function buildTurnScorePrompt(question, answer, interviewType) {
++// ---------------------------------------------------------------------------
++// Per-turn scoring
++// ---------------------------------------------------------------------------
++/**
++ * Build the per-turn scoring prompt with a fully anchored rubric
++ * and calibration context so the model can give consistent, fair scores.
++ */
++export function buildTurnScorePrompt(question, answer, interviewType, opts) {
++    const role = opts?.role || 'Software Engineer';
++    const company = opts?.company || 'a tech company';
++    const difficulty = opts?.difficulty || 'medium';
++    const turnIndex = opts?.turnIndex ?? 1;
++    const calibration = getCompanyCalibration(company);
++    const system = [
++        `You are an expert ${interviewType} interview evaluator for ${difficulty}-level ${role} positions at top tech companies.`,
++        '',
++        'Score the candidate answer on 4 dimensions. Return ONLY valid JSON with no markdown, no explanation outside the JSON.',
++        '',
++        'SCORING RUBRIC:',
++        '',
++        'clarity (0–100): Is the answer easy to understand? Are ideas expressed precisely without filler?',
++        '  90–100: Crystal clear, every sentence adds value, zero ambiguity',
++        '  70–89: Mostly clear, minor redundancy or occasional vague phrase',
++        '  50–69: Understandable but requires effort; some unclear sections',
++        '  30–49: Confusing structure, contradictory points, or hard to follow',
++        '  0–29: Incoherent or completely off-topic',
++        '',
++        'structure (0–100): Logical flow and organization appropriate to the interview type.',
++        '  90–100: Perfect structure — STAR for behavioral, trade-offs for design, step-by-step for technical',
++        '  70–89: Mostly structured with minor gaps or jumps in logic',
++        '  50–69: Some structure but disorganized; key parts missing',
++        '  30–49: Stream of consciousness, no discernible organization',
++        '  0–29: Completely unstructured or irrelevant to the question',
++        '',
++        'confidence (0–100): Does the candidate sound certain, decisive, and ownership-driven?',
++        '  90–100: Assertive, owns the answer, specific claims backed by clear reasoning',
++        '  70–89: Mostly confident with acceptable hedging',
++        '  50–69: Noticeably uncertain, over-qualifies, or frequently backtracks',
++        '  30–49: Passive, unsure, or sounds like they are guessing',
++        '  0–29: Highly uncertain, contradicts themselves, or refuses to commit to any position',
++        '',
++        'depth (0–100): Does the answer go beyond surface level? Are concrete specifics, examples, or technical nuance present?',
++        '  90–100: Rich with specifics — actual metrics, real examples, sophisticated trade-off reasoning',
++        '  70–89: Good depth with real examples or technical detail',
++        '  50–69: Partially substantive but misses specifics or relies on generic claims',
++        '  30–49: Surface-level, textbook-style, lacks any real experience or detail',
++        '  0–29: One-sentence or completely generic; no substantive content',
++        '',
++        `CALIBRATION FOR ${company.toUpperCase()}:`,
++        calibration,
++        '',
++        'SCORE DISTRIBUTION GUIDANCE:',
++        '- Average candidate: 60–68 per dimension',
++        '- Good candidate: 70–79',
++        '- Strong candidate (ChatGPT-quality structured answer): 78–84',
++        '- Exceptional (unique insight, real personal example, specific metrics): 85–92',
++        '- Reserve 93–100 for genuinely outstanding, memorable answers',
++        '',
++        'JSON SCHEMA (no markdown, return ONLY this):',
++        '{"clarity":0-100,"structure":0-100,"confidence":0-100,"depth":0-100,"reasoning":"1 concise sentence explaining the scores"}',
++    ].join('\n');
++    const user = [
++        `Interview context: ${interviewType} interview (${difficulty} difficulty) for ${role} at ${company}`,
++        `Turn: ${turnIndex}`,
++        '',
++        `Question asked: ${question.slice(0, 600)}`,
++        '',
++        `Candidate's answer: ${answer.slice(0, 1000)}`,
++        '',
++        'Score this answer using the rubric. Be honest and calibrated — a great answer should clearly outscore a vague one.',
++    ].join('\n');
+     return {
+-        system: [
+-            'You score one interview answer. Reply with ONLY valid JSON, no markdown.',
+-            'Schema: {"clarity":0-100,"structure":0-100,"confidence":0-100,"depth":0-100}',
+-            'Be fair and consistent. Short vague answers score lower.',
+-        ].join(' '),
+-        user: `Type: ${interviewType}\nQuestion: ${question.slice(0, 500)}\nAnswer: ${answer.slice(0, 800)}`,
+-        options: { temperature: 0.2, top_p: 0.8, num_predict: 60, repeat_penalty: 1.1 },
++        system,
++        user,
++        options: {
++            temperature: 0.15,
++            top_p: 0.85,
++            num_predict: 120,
++            repeat_penalty: 1.1,
++        },
+     };
+ }
+ export function parseTurnScores(raw) {
+@@ -72,7 +222,8 @@ export function parseTurnScores(raw) {
+         const depth = clamp(obj.depth);
+         if (clarity == null || structure == null || confidence == null || depth == null)
+             return null;
+-        return { clarity, structure, confidence, depth };
++        const reasoning = typeof obj.reasoning === 'string' ? obj.reasoning : undefined;
++        return { clarity, structure, confidence, depth, reasoning };
+     }
+     catch {
+         return null;
+@@ -96,21 +247,24 @@ export function averageTurnScores(turns) {
+         depth: Math.round(sum.depth / n),
+     };
+ }
++// ---------------------------------------------------------------------------
++// Closing blurb
++// ---------------------------------------------------------------------------
+ const CLOSING_PRESETS = {
+     strong: [
+-        'Thanks for your time today — that was a solid conversation overall.',
+-        'Appreciate the thoughtful answers. You handled that interview well.',
+-        'Good session. You communicated clearly and stayed engaged throughout.',
++        'Thanks for your time — that was a genuinely strong interview.',
++        'Appreciate the thoughtful answers. You demonstrated clear ownership and depth.',
++        'Good session. You communicated with confidence and backed your points with specifics.',
+     ],
+     mixed: [
+-        'Thanks for walking through those answers with me today.',
+-        'Appreciate your time — there were some strong moments and a few areas to tighten.',
+-        'Good effort today. A bit more structure in places would make this even stronger.',
++        'Thanks for walking through those answers with me.',
++        'Appreciate your time — there were strong moments, and a few areas worth tightening.',
++        'Good effort today. A bit more structure and specifics would take this to the next level.',
+     ],
+     weak: [
+-        'Thanks for your time today. There are a few areas we should keep practicing.',
+-        'Appreciate you sticking with the questions — let’s sharpen depth and structure next time.',
+-        'Thanks for the session. Focus on clearer examples and tighter answers going forward.',
++        'Thanks for your time today. There are clear areas to focus on before your next interview.',
++        'Appreciate you working through the questions — depth and structure need more practice.',
++        'Thanks for the session. Focus on concrete examples with measurable outcomes going forward.',
+     ],
+ };
+ export function pickClosingPreset(avgOverall) {
+@@ -118,19 +272,67 @@ export function pickClosingPreset(avgOverall) {
+     const list = CLOSING_PRESETS[bucket];
+     return list[Math.floor(Math.random() * list.length)];
+ }
+-/** One short performance sentence — not a full report. */
+ export function buildClosingBlurbPrompt(input) {
+     return {
+         system: [
+-            'You are wrapping up a mock interview as the human interviewer.',
+-            'Write ONE short sentence (max 18 words) about how the candidate performed.',
+-            'No questions. No bullet lists. No scores. Stay kind but honest.',
++            'You are wrapping up a mock interview as the professional human interviewer.',
++            'Write ONE honest sentence (max 20 words) about the candidate\'s overall performance.',
++            'Be specific, not generic. No bullet points, no questions, no scores.',
++            'Examples: "You showed strong ownership but need sharper metrics in your impact stories." or "Your technical depth was impressive but communication clarity needs work."',
+         ].join(' '),
+         user: [
+             `Role: ${input.role} at ${input.company}.`,
+-            `Rough overall level: ${input.avgOverall}/100.`,
+-            `Last answer snippet: ${input.lastAnswer.slice(0, 280)}`,
++            `Overall performance level: ${input.avgOverall}/100.`,
++            `Last answer excerpt: ${input.lastAnswer.slice(0, 350)}`,
+         ].join('\n'),
+-        options: { temperature: 0.5, top_p: 0.9, num_predict: 40, repeat_penalty: 1.1 },
++        options: { temperature: 0.5, top_p: 0.9, num_predict: 50, repeat_penalty: 1.1 },
++    };
++}
++export function buildFullEvaluationPrompt(input) {
++    const calibration = getCompanyCalibration(input.company);
++    const transcriptText = input.transcript
++        .map((t) => `[${t.role.toUpperCase()}]: ${t.content}`)
++        .join('\n\n');
++    const system = [
++        `You are an expert interview panel evaluator reviewing a complete ${input.interviewType} mock interview.`,
++        `Role: ${input.role} at ${input.company} (${input.difficulty} difficulty).`,
++        '',
++        `Company calibration: ${calibration}`,
++        '',
++        'Provide a comprehensive, honest evaluation of the ENTIRE session.',
++        'Return ONLY valid JSON (no markdown):',
++        JSON.stringify({
++            scores: {
++                clarity: '0-100: overall communication clarity across all answers',
++                structure: '0-100: overall logical organization and framework usage',
++                confidence: '0-100: overall decisiveness and ownership demonstrated',
++                depth: '0-100: overall depth of knowledge and specificity',
++                communication: '0-100: active listening, conciseness, and adaptability',
++                technical_accuracy: '0-100: correctness of any technical claims made',
++            },
++            strengths: ['specific strength observed in transcript', 'another specific strength'],
++            improvements: ['most important area to work on', 'second priority improvement'],
++            standout_moment: 'The single best moment or answer in the interview — quote or describe it',
++            critical_miss: 'The most important thing the candidate failed to address or got wrong',
++            overall_verdict: 'Strong Hire | Hire | No Hire | Strong No Hire',
++            summary: '3-4 sentence honest, calibrated assessment of this candidate',
++        }),
++    ].join('\n');
++    const user = [
++        `FULL INTERVIEW TRANSCRIPT:`,
++        '',
++        transcriptText,
++        '',
++        'Evaluate this candidate holistically. Be calibrated — do not be generous with verdicts.',
++    ].join('\n');
++    return {
++        system,
++        user,
++        options: {
++            temperature: 0.2,
++            top_p: 0.9,
++            num_predict: 600,
++            repeat_penalty: 1.05,
++        },
+     };
+ }
+diff --git a/packages/abhyas/dist/server.js b/packages/abhyas/dist/server.js
+index 2aea667..c1bac99 100644
+--- a/packages/abhyas/dist/server.js
++++ b/packages/abhyas/dist/server.js
+@@ -1,8 +1,9 @@
+ import express from 'express';
+ import cors from 'cors';
+ import { detectOllama, ndjsonToSse, streamOllamaChat, chatOllamaOnce, warmOllamaModel, OLLAMA_KEEP_ALIVE, } from './ollama.js';
+-import { buildInterviewerSystemPrompt, defaultGenerationOptions, buildTurnScorePrompt, parseTurnScores, buildClosingBlurbPrompt, pickClosingPreset, averageTurnScores, } from './prompts/interviewer.js';
++import { buildTurnScorePrompt, parseTurnScores, buildClosingBlurbPrompt, buildFullEvaluationPrompt, pickClosingPreset, averageTurnScores, } from './prompts/interviewer.js';
+ import { log } from './logger.js';
++import { synthesizeEdgeTts } from './edgetts.js';
+ const KEEP_ALIVE_MS = 4 * 60 * 1000;
+ /** Periodically re-touch the selected model so Ollama does not unload it. */
+ export function startModelKeepAlive(state) {
+@@ -41,6 +42,24 @@ export function createBridgeApp(state) {
+             return res.status(502).json({ error: 'Failed to warm interviewer' });
+         }
+     });
++    app.post('/tts/generate', async (req, res) => {
++        const { text, voice = 'en-US-AvaNeural', rate = '+0%', pitch = '+0Hz' } = req.body ?? {};
++        if (!text || typeof text !== 'string') {
++            return res.status(400).json({ error: 'Missing text parameter' });
++        }
++        log.info(`tts · voice: ${voice} · length: ${text.length} chars`);
++        try {
++            const audioBuffer = await synthesizeEdgeTts({ text, voice, rate, pitch });
++            res.setHeader('Content-Type', 'audio/mpeg');
++            res.setHeader('Content-Length', audioBuffer.length);
++            return res.send(audioBuffer);
++        }
++        catch (err) {
++            const msg = err instanceof Error ? err.message : String(err);
++            log.err(`tts error: ${msg}`);
++            return res.status(502).json({ error: 'Failed to synthesize speech via Edge-TTS', detail: msg });
++        }
++    });
+     app.get('/health', async (_req, res) => {
+         const result = await detectOllama(state.ollamaUrl);
+         if (!result.ok) {
+@@ -81,7 +100,7 @@ export function createBridgeApp(state) {
+         pipeSseChat(res, state, { model, messages, options });
+     });
+     app.post('/interview/chat', (req, res) => {
+-        const { model, messages, interviewType = 'custom', role = 'Software Engineer', company = 'Company', difficulty = 'medium', options, } = req.body ?? {};
++        const { model, messages, systemPrompt, interviewType = 'custom', difficulty = 'medium', options, } = req.body ?? {};
+         if (!messages || !Array.isArray(messages)) {
+             return res.status(400).json({ error: 'Missing messages array' });
+         }
+@@ -89,24 +108,22 @@ export function createBridgeApp(state) {
+         if (!useModel) {
+             return res.status(400).json({ error: 'No model selected. Restart bridge and pick a model.' });
+         }
+-        const system = buildInterviewerSystemPrompt({
+-            interviewType,
+-            role,
+-            company,
+-            difficulty,
+-        });
+         const stripped = messages.filter((m) => m && m.role !== 'system');
+-        const fullMessages = [{ role: 'system', content: system }, ...stripped];
++        const fullMessages = systemPrompt
++            ? [{ role: 'system', content: String(systemPrompt) }, ...stripped]
++            : stripped;
+         const gen = {
+-            ...defaultGenerationOptions(difficulty),
++            temperature: difficulty === 'hard' ? 0.55 : 0.45,
++            top_p: 0.9,
++            num_predict: difficulty === 'hard' ? 200 : 160,
++            repeat_penalty: 1.15,
+             ...(options && typeof options === 'object' ? options : {}),
+         };
+         log.info(`interview · ${useModel} · ${interviewType}/${difficulty}`);
+         pipeSseChat(res, state, { model: useModel, messages: fullMessages, options: gen });
+     });
+-    /** Score one Q+A only (fast) — do not send full transcript. */
+     app.post('/interview/score-turn', async (req, res) => {
+-        const { model, question, answer, interviewType = 'custom', } = req.body ?? {};
++        const { model, question, answer, interviewType = 'custom', role = 'Software Engineer', company = 'a tech company', difficulty = 'medium', turnIndex = 1, } = req.body ?? {};
+         if (!question || !answer) {
+             return res.status(400).json({ error: 'Missing question or answer' });
+         }
+@@ -114,8 +131,13 @@ export function createBridgeApp(state) {
+         if (!useModel) {
+             return res.status(400).json({ error: 'No model selected' });
+         }
+-        const prompt = buildTurnScorePrompt(String(question), String(answer), String(interviewType));
+-        log.info(`score-turn · ${useModel}`);
++        const prompt = buildTurnScorePrompt(String(question), String(answer), String(interviewType), {
++            role: String(role),
++            company: String(company),
++            difficulty: String(difficulty),
++            turnIndex: Number(turnIndex),
++        });
++        log.info(`score-turn · ${useModel} · turn ${turnIndex} · ${company}/${difficulty}`);
+         try {
+             const raw = await chatOllamaOnce(state.ollamaUrl, {
+                 model: useModel,
+@@ -125,20 +147,62 @@ export function createBridgeApp(state) {
+                 ],
+                 options: prompt.options,
+             });
+-            const scores = parseTurnScores(raw) ?? {
+-                clarity: 74,
+-                structure: 72,
+-                confidence: 73,
+-                depth: 71,
+-            };
+-            return res.json({ scores, raw });
++            const scores = parseTurnScores(raw);
++            if (!scores) {
++                log.warn(`score-turn: failed to parse JSON from model output: ${raw.slice(0, 100)}`);
++                return res.status(502).json({ error: 'Model returned unparseable score output', raw });
++            }
++            return res.json({ scores, reasoning: scores.reasoning ?? null, raw });
+         }
+         catch (err) {
+             log.err(`score-turn: ${err instanceof Error ? err.message : String(err)}`);
+             return res.status(502).json({ error: 'Failed to score turn' });
+         }
+     });
+-    /** Premade closing + one short model performance sentence. */
++    app.post('/interview/evaluate', async (req, res) => {
++        const { model, transcript, interviewType = 'custom', role = 'Software Engineer', company = 'a tech company', difficulty = 'medium', } = req.body ?? {};
++        if (!Array.isArray(transcript) || transcript.length === 0) {
++            return res.status(400).json({ error: 'Missing or empty transcript array' });
++        }
++        const useModel = (typeof model === 'string' && model) || state.selectedModel;
++        if (!useModel) {
++            return res.status(400).json({ error: 'No model selected' });
++        }
++        const prompt = buildFullEvaluationPrompt({
++            transcript: transcript,
++            interviewType: String(interviewType),
++            role: String(role),
++            company: String(company),
++            difficulty: String(difficulty),
++        });
++        log.info(`evaluate · ${useModel} · ${transcript.length} turns · ${company}/${difficulty}`);
++        try {
++            const raw = await chatOllamaOnce(state.ollamaUrl, {
++                model: useModel,
++                messages: [
++                    { role: 'system', content: prompt.system },
++                    { role: 'user', content: prompt.user },
++                ],
++                options: prompt.options,
++            });
++            const match = raw.match(/\{[\s\S]*\}/);
++            if (!match) {
++                log.warn(`evaluate: no JSON found in model output`);
++                return res.status(502).json({ error: 'Model returned unparseable evaluation', raw });
++            }
++            try {
++                const evaluation = JSON.parse(match[0]);
++                return res.json({ evaluation, raw });
++            }
++            catch {
++                return res.status(502).json({ error: 'Failed to parse evaluation JSON', raw });
++            }
++        }
++        catch (err) {
++            log.err(`evaluate: ${err instanceof Error ? err.message : String(err)}`);
++            return res.status(502).json({ error: 'Failed to evaluate session' });
++        }
++    });
+     app.post('/interview/closing', async (req, res) => {
+         const { model, role = 'Software Engineer', company = 'Company', lastAnswer = '', turnScores = [], } = req.body ?? {};
+         const useModel = (typeof model === 'string' && model) || state.selectedModel;
+diff --git a/packages/abhyas/package-lock.json b/packages/abhyas/package-lock.json
+index 5ed09db..1bb02f7 100644
+--- a/packages/abhyas/package-lock.json
++++ b/packages/abhyas/package-lock.json
+@@ -8,8 +8,11 @@
+       "name": "@abhyas/bridge",
+       "version": "0.1.0",
+       "dependencies": {
++        "@types/ws": "^8.18.1",
+         "cors": "^2.8.5",
+-        "express": "^4.19.2"
++        "edge-tts": "^1.0.1",
++        "express": "^4.19.2",
++        "ws": "^8.21.2"
+       },
+       "bin": {
+         "abhyas-bridge": "dist/cli.js"
+@@ -96,7 +99,6 @@
+       "version": "20.19.43",
+       "resolved": "https://registry.npmjs.org/@types/node/-/node-20.19.43.tgz",
+       "integrity": "sha512-6oYBAi5ikg4Pl+kGsoYtawUMBT2zZMCvPNF7pVLnHZfd1zf38DRiWn/gT01RYCdUqkv7Fhr+C9ot4/tb+2sVvA==",
+-      "dev": true,
+       "license": "MIT",
+       "dependencies": {
+         "undici-types": "~6.21.0"
+@@ -149,6 +151,15 @@
+         "@types/node": "*"
+       }
+     },
++    "node_modules/@types/ws": {
++      "version": "8.18.1",
++      "resolved": "https://registry.npmjs.org/@types/ws/-/ws-8.18.1.tgz",
++      "integrity": "sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==",
++      "license": "MIT",
++      "dependencies": {
++        "@types/node": "*"
++      }
++    },
+     "node_modules/accepts": {
+       "version": "1.3.8",
+       "resolved": "https://registry.npmjs.org/accepts/-/accepts-1.3.8.tgz",
+@@ -325,6 +336,18 @@
+         "node": ">= 0.4"
+       }
+     },
++    "node_modules/edge-tts": {
++      "version": "1.0.1",
++      "resolved": "https://registry.npmjs.org/edge-tts/-/edge-tts-1.0.1.tgz",
++      "integrity": "sha512-Yv5S4y5k3bWC+0iyD6PDCOI0SLpBN5B1Mv6apgyWjhHzU8GDrBMv6BvT9lZBY5O/4Ow7KFcYaItXC/H0BFmewA==",
++      "license": "CC BY-NC-SA 4.0",
++      "dependencies": {
++        "ws": "^8.16.0"
++      },
++      "peerDependencies": {
++        "typescript": "^5.0.0"
++      }
++    },
+     "node_modules/ee-first": {
+       "version": "1.1.1",
+       "resolved": "https://registry.npmjs.org/ee-first/-/ee-first-1.1.1.tgz",
+@@ -965,7 +988,6 @@
+       "version": "5.9.3",
+       "resolved": "https://registry.npmjs.org/typescript/-/typescript-5.9.3.tgz",
+       "integrity": "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==",
+-      "dev": true,
+       "license": "Apache-2.0",
+       "bin": {
+         "tsc": "bin/tsc",
+@@ -979,7 +1001,6 @@
+       "version": "6.21.0",
+       "resolved": "https://registry.npmjs.org/undici-types/-/undici-types-6.21.0.tgz",
+       "integrity": "sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ==",
+-      "dev": true,
+       "license": "MIT"
+     },
+     "node_modules/unpipe": {
+@@ -1008,6 +1029,27 @@
+       "engines": {
+         "node": ">= 0.8"
+       }
++    },
++    "node_modules/ws": {
++      "version": "8.21.2",
++      "resolved": "https://registry.npmjs.org/ws/-/ws-8.21.2.tgz",
++      "integrity": "sha512-54dMVAo4WIe6SKy3vBgN+9bJZqqQ8IMRevAkOLQALhi49qkkQDQfWdAZ8KQlXiEabw88ARXXdUrlvtbKQX+aKw==",
++      "license": "MIT",
++      "engines": {
++        "node": ">=10.0.0"
++      },
++      "peerDependencies": {
++        "bufferutil": "^4.0.1",
++        "utf-8-validate": ">=5.0.2"
++      },
++      "peerDependenciesMeta": {
++        "bufferutil": {
++          "optional": true
++        },
++        "utf-8-validate": {
++          "optional": true
++        }
++      }
+     }
+   }
+ }
+diff --git a/packages/abhyas/package.json b/packages/abhyas/package.json
+index 41945d6..717e4a2 100644
+--- a/packages/abhyas/package.json
++++ b/packages/abhyas/package.json
+@@ -17,8 +17,11 @@
+     "dev": "tsc && node dist/cli.js run"
+   },
+   "dependencies": {
++    "@types/ws": "^8.18.1",
+     "cors": "^2.8.5",
+-    "express": "^4.19.2"
++    "edge-tts": "^1.0.1",
++    "express": "^4.19.2",
++    "ws": "^8.21.2"
+   },
+   "devDependencies": {
+     "@types/cors": "^2.8.17",
+diff --git a/packages/abhyas/src/edgetts.ts b/packages/abhyas/src/edgetts.ts
+new file mode 100644
+index 0000000..38a4407
+--- /dev/null
++++ b/packages/abhyas/src/edgetts.ts
+@@ -0,0 +1,131 @@
++import { WebSocket } from 'ws';
++
++export interface EdgeTtsOptions {
++  text: string;
++  voice?: string;
++  rate?: string;
++  pitch?: string;
++  volume?: string;
++}
++
++const TRUSTED_CLIENT_TOKEN = '6A5AA1D4EA01470597E3F5183064AF59';
++
++function generateRequestId(): string {
++  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
++    const r = (Math.random() * 16) | 0;
++    const v = c === 'x' ? r : (r & 0x3) | 0x8;
++    return v.toString(16);
++  });
++}
++
++/** Synthesize audio buffer using Microsoft Edge Read Aloud WebSocket API. */
++export async function synthesizeEdgeTts(options: EdgeTtsOptions): Promise<Buffer> {
++  const voice = options.voice || 'en-US-AvaNeural';
++  const rate = options.rate || '+0%';
++  const pitch = options.pitch || '+0Hz';
++  const volume = options.volume || '+0%';
++
++  const requestId = generateRequestId();
++  const wsUrl = `wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=${TRUSTED_CLIENT_TOKEN}&Sec-MS-GEC=1&Sec-MS-GEC-Version=1-130.0.2849.68`;
++
++  return new Promise((resolve, reject) => {
++    const ws = new WebSocket(wsUrl, {
++      headers: {
++        'User-Agent':
++          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0',
++        'Accept-Encoding': 'gzip, deflate, br',
++        'Accept-Language': 'en-US,en;q=0.9',
++        Pragma: 'no-cache',
++      },
++    });
++
++    const audioBuffers: Buffer[] = [];
++    let isCompleted = false;
++
++    const timeoutTimer = setTimeout(() => {
++      if (!isCompleted) {
++        isCompleted = true;
++        ws.close();
++        reject(new Error('Edge-TTS websocket request timed out'));
++      }
++    }, 12000);
++
++    ws.on('open', () => {
++      const configHeader =
++        `X-Timestamp:${new Date().toISOString()}\r\n` +
++        `Content-Type:application/json; charset=utf-8\r\n` +
++        `Path:speech.config\r\n\r\n` +
++        JSON.stringify({
++          context: {
++            synthesis: {
++              audio: {
++                metadataversion: 'A2Mv1',
++                wordmatchingmode: 'MicrosoftServer',
++              },
++            },
++          },
++        });
++
++      ws.send(configHeader);
++
++      const ssml =
++        `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'>` +
++        `<voice name='${voice}'>` +
++        `<prosody pitch='${pitch}' rate='${rate}' volume='${volume}'>` +
++        `${options.text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}` +
++        `</prosody>` +
++        `</voice>` +
++        `</speak>`;
++
++      const ssmlHeader =
++        `X-RequestId:${requestId}\r\n` +
++        `Content-Type:application/ssml+xml\r\n` +
++        `Path:ssml\r\n\r\n` +
++        ssml;
++
++      ws.send(ssmlHeader);
++    });
++
++    ws.on('message', (data: WebSocket.Data, isBinary: boolean) => {
++      if (isBinary) {
++        const buffer = Buffer.from(data as ArrayBuffer);
++        // Header length is encoded in the first 2 bytes as BigEndian unsigned int
++        if (buffer.length > 2) {
++          const headerLength = buffer.readUInt16BE(0);
++          const audioChunk = buffer.subarray(2 + headerLength);
++          if (audioChunk.length > 0) {
++            audioBuffers.push(audioChunk);
++          }
++        }
++      } else {
++        const text = data.toString('utf8');
++        if (text.includes('Path:turn.end')) {
++          isCompleted = true;
++          clearTimeout(timeoutTimer);
++          ws.close();
++          resolve(Buffer.concat(audioBuffers));
++        }
++      }
++    });
++
++    ws.on('error', (err) => {
++      if (!isCompleted) {
++        isCompleted = true;
++        clearTimeout(timeoutTimer);
++        reject(err);
++      }
++    });
++
++    ws.on('close', () => {
++      if (!isCompleted) {
++        isCompleted = true;
++        clearTimeout(timeoutTimer);
++        if (audioBuffers.length > 0) {
++          resolve(Buffer.concat(audioBuffers));
++        } else {
++          reject(new Error('Edge-TTS connection closed before receiving audio'));
++        }
++      }
++    });
++  });
++}
+diff --git a/packages/abhyas/src/server.ts b/packages/abhyas/src/server.ts
+index d4b88a1..ce45cdc 100644
+--- a/packages/abhyas/src/server.ts
++++ b/packages/abhyas/src/server.ts
+@@ -9,8 +9,6 @@ import {
+   OLLAMA_KEEP_ALIVE,
+ } from './ollama.js';
+ import {
+-  buildInterviewerSystemPrompt,
+-  defaultGenerationOptions,
+   buildTurnScorePrompt,
+   parseTurnScores,
+   buildClosingBlurbPrompt,
+@@ -22,6 +20,8 @@ import {
+ } from './prompts/interviewer.js';
+ import { log } from './logger.js';
+ 
++import { synthesizeEdgeTts } from './edgetts.js';
++
+ export interface BridgeState {
+   ollamaUrl: string;
+   selectedModel: string;
+@@ -71,6 +71,26 @@ export function createBridgeApp(state: BridgeState) {
+     }
+   });
+ 
++  app.post('/tts/generate', async (req, res) => {
++    const { text, voice = 'en-US-AvaNeural', rate = '+0%', pitch = '+0Hz' } = req.body ?? {};
++    if (!text || typeof text !== 'string') {
++      return res.status(400).json({ error: 'Missing text parameter' });
++    }
++
++    log.info(`tts · voice: ${voice} · length: ${text.length} chars`);
++
++    try {
++      const audioBuffer = await synthesizeEdgeTts({ text, voice, rate, pitch });
++      res.setHeader('Content-Type', 'audio/mpeg');
++      res.setHeader('Content-Length', audioBuffer.length);
++      return res.send(audioBuffer);
++    } catch (err) {
++      const msg = err instanceof Error ? err.message : String(err);
++      log.err(`tts error: ${msg}`);
++      return res.status(502).json({ error: 'Failed to synthesize speech via Edge-TTS', detail: msg });
++    }
++  });
++
+   app.get('/health', async (_req, res) => {
+     const result = await detectOllama(state.ollamaUrl);
+     if (!result.ok) {
+@@ -117,9 +137,8 @@ export function createBridgeApp(state: BridgeState) {
+     const {
+       model,
+       messages,
++      systemPrompt,
+       interviewType = 'custom',
+-      role = 'Software Engineer',
+-      company = 'Company',
+       difficulty = 'medium',
+       options,
+     } = req.body ?? {};
+@@ -133,19 +152,18 @@ export function createBridgeApp(state: BridgeState) {
+       return res.status(400).json({ error: 'No model selected. Restart bridge and pick a model.' });
+     }
+ 
+-    const system = buildInterviewerSystemPrompt({
+-      interviewType,
+-      role,
+-      company,
+-      difficulty,
+-    });
+-
+     const stripped = messages.filter(
+       (m: { role?: string }) => m && m.role !== 'system'
+     );
+-    const fullMessages = [{ role: 'system', content: system }, ...stripped];
++    const fullMessages = systemPrompt
++      ? [{ role: 'system', content: String(systemPrompt) }, ...stripped]
++      : stripped;
++
+     const gen = {
+-      ...defaultGenerationOptions(difficulty),
++      temperature: difficulty === 'hard' ? 0.55 : 0.45,
++      top_p: 0.9,
++      num_predict: difficulty === 'hard' ? 200 : 160,
++      repeat_penalty: 1.15,
+       ...(options && typeof options === 'object' ? options : {}),
+     };
+ 
+@@ -153,7 +171,6 @@ export function createBridgeApp(state: BridgeState) {
+     pipeSseChat(res, state, { model: useModel, messages: fullMessages, options: gen });
+   });
+ 
+-  /** Score one Q+A with full context (role, company, difficulty, turnIndex). */
+   app.post('/interview/score-turn', async (req, res) => {
+     const {
+       model,
+@@ -209,7 +226,6 @@ export function createBridgeApp(state: BridgeState) {
+     }
+   });
+ 
+-  /** Full holistic session evaluation from complete transcript. */
+   app.post('/interview/evaluate', async (req, res) => {
+     const {
+       model,
+@@ -266,7 +282,6 @@ export function createBridgeApp(state: BridgeState) {
+     }
+   });
+ 
+-  /** Premade closing + one short model performance sentence. */
+   app.post('/interview/closing', async (req, res) => {
+     const {
+       model,
+diff --git a/src/app/(app)/interview/[id]/page.tsx b/src/app/(app)/interview/[id]/page.tsx
+index a48e2b4..faef16a 100644
+--- a/src/app/(app)/interview/[id]/page.tsx
++++ b/src/app/(app)/interview/[id]/page.tsx
+@@ -19,6 +19,9 @@ import {
+   type BridgeConfig,
+   type TurnScores,
+ } from '@/lib/bridge';
++import { speakText, stopSpeech } from '@/lib/audio';
++import { ttsManager } from '@/lib/tts/ttsManager';
++import { buildInterviewerSystemPrompt } from '@/lib/prompts';
+ 
+ type SessionPhase = 'prep' | 'connecting' | 'live';
+ 
+@@ -320,6 +323,15 @@ export default function ActiveSessionPage({ params }: { params: Promise<{ id: st
+     let sawToken = false;
+ 
+     try {
++      const systemPrompt = buildInterviewerSystemPrompt({
++        interviewType: interview.type,
++        role: interview.role,
++        company: interview.company,
++        difficulty: interview.difficulty,
++      });
++
++      const ttsStreamer = ttsManager.createSentenceStreamer();
++
+       const full = await streamInterviewChat({
+         bridgeUrl: cfg.bridgeUrl,
+         model: cfg.model,
+@@ -327,6 +339,7 @@ export default function ActiveSessionPage({ params }: { params: Promise<{ id: st
+         role: interview.role,
+         company: interview.company,
+         difficulty: interview.difficulty,
++        systemPrompt,
+         messages: toChatMessages(history),
+         onToken: (t) => {
+           if (!sawToken) {
+@@ -334,9 +347,12 @@ export default function ActiveSessionPage({ params }: { params: Promise<{ id: st
+             opts?.onFirstToken?.();
+           }
+           setStreamingText((prev) => prev + t);
++          ttsStreamer.pushToken(t);
+         },
+       });
+ 
++      ttsStreamer.flush();
++
+       if (!full) throw new Error('Interviewer did not respond. Try again.');
+ 
+       if (!sawToken) opts?.onFirstToken?.();
+@@ -1122,9 +1138,45 @@ export default function ActiveSessionPage({ params }: { params: Promise<{ id: st
+                   {interview.status === 'analyzing' ? 'Analyzing session' : 'Live transcript'}
+                 </span>
+               </div>
+-              <span style={{ fontSize: 10, fontFamily: 'monospace', fontWeight: 700, color: T.green, textTransform: 'uppercase' }}>
+-                Question {Math.min(MAX_QUESTIONS, Math.max(1, currentQuestionNum))} of {MAX_QUESTIONS}
+-              </span>
++              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
++                <span style={{ fontSize: 10, fontFamily: 'monospace', fontWeight: 700, color: T.green, textTransform: 'uppercase' }}>
++                  Question {Math.min(MAX_QUESTIONS, Math.max(1, currentQuestionNum))} of {MAX_QUESTIONS}
++                </span>
++                {(() => {
++                  const lastQ = [...messages].reverse().find((m) => m.sender === 'interviewer')?.content;
++                  if (!lastQ || isInterviewerResponding) return null;
++                  return (
++                    <button
++                      onClick={() => {
++                        stopSpeech();
++                        speakText(lastQ);
++                      }}
++                      title="Replay last question audio"
++                      style={{
++                        fontSize: 10,
++                        fontFamily: 'monospace',
++                        fontWeight: 700,
++                        textTransform: 'uppercase',
++                        color: T.green,
++                        backgroundColor: 'rgba(34,197,94,0.08)',
++                        border: '1px solid rgba(34,197,94,0.25)',
++                        borderRadius: 6,
++                        padding: '3px 8px',
++                        cursor: 'pointer',
++                        display: 'inline-flex',
++                        alignItems: 'center',
++                        gap: 4,
++                      }}
++                    >
++                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
++                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
++                        <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
++                      </svg>
++                      Repeat Question
++                    </button>
++                  );
++                })()}
++              </div>
+             </div>
+ 
+             <div style={{ flex: 1, overflowY: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
+diff --git a/src/app/(app)/interview/new/page.tsx b/src/app/(app)/interview/new/page.tsx
+index a92681b..9dc535b 100644
+--- a/src/app/(app)/interview/new/page.tsx
++++ b/src/app/(app)/interview/new/page.tsx
+@@ -150,6 +150,7 @@ export default function NewInterviewPage() {
+   const [role, setRole] = useState('Senior Software Engineer');
+   const [difficulty, setDifficulty] = useState('medium');
+   const [duration, setDuration] = useState('45');
++  const [jobDescription, setJobDescription] = useState('');
+   const [isStarting, setIsStarting] = useState(false);
+ 
+   // Calibrate to user's targeted company & role once profile resolves
+@@ -280,25 +281,46 @@ export default function NewInterviewPage() {
+           <h2 style={{ fontSize: 14, fontWeight: 700, color: T.text0, margin: 0 }}>Role & Experience Calibration</h2>
+         </div>
+ 
+-        <Panel style={{ padding: 24, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+-          <FieldInput label="Target Company" value={company} onChange={e => setCompany(e.target.value)} placeholder="e.g. Google, Meta, Stripe" />
+-          <FieldInput label="Target Role Title" value={role} onChange={e => setRole(e.target.value)} placeholder="e.g. Senior Software Engineer" />
+-          <FieldSelect
+-            label="Difficulty / Seniority"
+-            value={difficulty}
+-            onChange={e => setDifficulty(e.target.value)}
+-            options={[
+-              { value: 'easy', label: 'Entry Level (L3 / Junior SDE)' },
+-              { value: 'medium', label: 'Mid-Level (L4 / SDE II)' },
+-              { value: 'hard', label: 'Senior / Staff (L5+)' },
+-            ]}
+-          />
+-          <FieldSelect
+-            label="Session Duration"
+-            value={duration}
+-            onChange={e => setDuration(e.target.value)}
+-            options={SESSION_DURATIONS.map(d => ({ value: d.toString(), label: `${d} minutes — voice interactive` }))}
+-          />
++        <Panel style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
++          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
++            <FieldInput label="Target Company" value={company} onChange={e => setCompany(e.target.value)} placeholder="e.g. Google, Meta, Stripe" />
++            <FieldInput label="Target Role Title" value={role} onChange={e => setRole(e.target.value)} placeholder="e.g. Senior Software Engineer" />
++            <FieldSelect
++              label="Difficulty / Seniority"
++              value={difficulty}
++              onChange={e => setDifficulty(e.target.value)}
++              options={[
++                { value: 'easy', label: 'Entry Level (L3 / Junior SDE)' },
++                { value: 'medium', label: 'Mid-Level (L4 / SDE II)' },
++                { value: 'hard', label: 'Senior / Staff (L5+)' },
++              ]}
++            />
++            <FieldSelect
++              label="Session Duration"
++              value={duration}
++              onChange={e => setDuration(e.target.value)}
++              options={SESSION_DURATIONS.map(d => ({ value: d.toString(), label: `${d} minutes — voice interactive` }))}
++            />
++          </div>
++          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
++            <label style={{ fontSize: 11, fontWeight: 600, color: T.text2, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
++              Job Description / Target Requirements (Optional)
++            </label>
++            <textarea
++              value={jobDescription}
++              onChange={e => setJobDescription(e.target.value)}
++              placeholder="Paste the job description or specific key requirements here to calibrate interviewer questions..."
++              rows={3}
++              style={{
++                backgroundColor: T.cardHov, border: `1px solid ${T.border}`, borderRadius: 10,
++                padding: '10px 14px', fontSize: 13, color: T.text0, outline: 'none',
++                width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', resize: 'vertical',
++                lineHeight: 1.5,
++              }}
++              onFocus={e => { e.target.style.borderColor = T.green; e.target.style.boxShadow = '0 0 0 3px rgba(34,197,94,0.12)'; }}
++              onBlur={e => { e.target.style.borderColor = T.border; e.target.style.boxShadow = 'none'; }}
++            />
++          </div>
+         </Panel>
+       </section>
+ 
+diff --git a/src/app/(app)/settings/page.tsx b/src/app/(app)/settings/page.tsx
+index 9c2fa9c..6a3d1b8 100644
+--- a/src/app/(app)/settings/page.tsx
++++ b/src/app/(app)/settings/page.tsx
+@@ -115,9 +115,11 @@ function OutlineBtn({ children, onClick }: { children: React.ReactNode; onClick?
+   );
+ }
+ 
++import { VoiceSettingsCard } from '@/components/settings/VoiceSettingsCard';
++
+ // ── Tabs ──────────────────────────────────────────────────────────────────────
+ 
+-const TABS = ['Account', 'Local AI', 'Notifications', 'Privacy', 'Billing'] as const;
++const TABS = ['Account', 'Local AI', 'Voice Engine', 'Notifications', 'Privacy', 'Billing'] as const;
+ type Tab = typeof TABS[number];
+ 
+ // ── Page ─────────────────────────────────────────────────────────────────────
+@@ -356,6 +358,9 @@ export default function SettingsPage() {
+             </Panel>
+           )}
+ 
++          {/* Voice Engine tab */}
++          {activeTab === 'Voice Engine' && <VoiceSettingsCard />}
++
+           {/* Notifications tab */}
+           {activeTab === 'Notifications' && (
+             <Panel style={{ padding: '0 24px' }}>
+diff --git a/src/components/settings/VoiceSettingsCard.tsx b/src/components/settings/VoiceSettingsCard.tsx
+new file mode 100644
+index 0000000..00e224c
+--- /dev/null
++++ b/src/components/settings/VoiceSettingsCard.tsx
+@@ -0,0 +1,225 @@
++'use client';
++
++import React, { useState, useEffect } from 'react';
++import { ttsManager } from '@/lib/tts/ttsManager';
++import { TTSConfig, TTSEngineMode, TTSVoiceOption } from '@/lib/tts/types';
++
++const T = {
++  card: 'var(--v-card)',
++  cardHov: 'var(--v-raised)',
++  border: 'var(--v-border)',
++  green: 'var(--v-accent)',
++  text0: 'var(--v-tx0)',
++  text1: 'var(--v-tx1)',
++  text2: 'var(--v-tx2)',
++  text3: 'var(--v-tx3)',
++};
++
++export function VoiceSettingsCard() {
++  const [config, setConfig] = useState<TTSConfig>(() => ttsManager.getConfig());
++  const [voices, setVoices] = useState<TTSVoiceOption[]>([]);
++  const [isPlayingPreview, setIsPlayingPreview] = useState(false);
++
++  useEffect(() => {
++    const loadVoices = async () => {
++      const available = await ttsManager.getAvailableVoices(config.engine);
++      setVoices(available);
++      if (available.length > 0 && (!config.voiceId || !available.some((v) => v.id === config.voiceId))) {
++        const nextId = available[0].id;
++        const updated = { ...config, voiceId: nextId };
++        setConfig(updated);
++        ttsManager.setConfig(updated);
++      }
++    };
++    loadVoices();
++  }, [config.engine]);
++
++  const handleEngineChange = (engine: TTSEngineMode) => {
++    const updated = { ...config, engine, voiceId: '' };
++    setConfig(updated);
++    ttsManager.setConfig(updated);
++  };
++
++  const handleVoiceChange = (voiceId: string) => {
++    const updated = { ...config, voiceId };
++    setConfig(updated);
++    ttsManager.setConfig(updated);
++  };
++
++  const handleRateChange = (rate: number) => {
++    const updated = { ...config, rate };
++    setConfig(updated);
++    ttsManager.setConfig(updated);
++  };
++
++  const handlePreview = async () => {
++    if (isPlayingPreview) {
++      ttsManager.stop();
++      setIsPlayingPreview(false);
++      return;
++    }
++
++    setIsPlayingPreview(true);
++    const sampleText =
++      config.engine === 'edge'
++        ? 'Hello! I am your high-quality neural AI interviewer. I sound clear and natural.'
++        : 'Hello! I am your lightweight browser AI interviewer. I operate with zero CPU lag.';
++
++    try {
++      await ttsManager.speak(sampleText, {
++        onEnd: () => setIsPlayingPreview(false),
++        onError: () => setIsPlayingPreview(false),
++      });
++    } catch {
++      setIsPlayingPreview(false);
++    }
++  };
++
++  return (
++    <div
++      style={{
++        backgroundColor: T.card,
++        border: `1px solid ${T.border}`,
++        borderRadius: 16,
++        padding: 24,
++        display: 'flex',
++        flexDirection: 'column',
++        gap: 20,
++      }}
++    >
++      <div>
++        <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.18em', color: T.text3, margin: 0 }}>
++          Voice & Speech System
++        </p>
++        <h3 style={{ fontSize: 18, fontWeight: 800, color: T.text0, margin: '4px 0 0' }}>
++          Interviewer Voice Engine
++        </h3>
++        <p style={{ fontSize: 12, color: T.text2, margin: '4px 0 0', lineHeight: 1.5 }}>
++          Choose between fast native browser synthesis or human-sounding neural voices.
++        </p>
++      </div>
++
++      {/* Mode Selector Cards */}
++      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
++        {/* Web Speech Option */}
++        <div
++          onClick={() => handleEngineChange('webspeech')}
++          style={{
++            padding: 16,
++            borderRadius: 12,
++            border: config.engine === 'webspeech' ? `2px solid ${T.green}` : `1px solid ${T.border}`,
++            backgroundColor: config.engine === 'webspeech' ? 'rgba(34,197,94,0.06)' : T.cardHov,
++            cursor: 'pointer',
++            transition: 'all 0.15s ease',
++          }}
++        >
++          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
++            <span style={{ fontSize: 14, fontWeight: 700, color: T.text0 }}>⚡ Fast & Lightweight</span>
++            {config.engine === 'webspeech' && (
++              <span style={{ fontSize: 10, fontWeight: 800, color: T.green, textTransform: 'uppercase' }}>Active</span>
++            )}
++          </div>
++          <p style={{ fontSize: 11, color: T.text2, margin: 0, lineHeight: 1.4 }}>
++            Browser native (Web Speech API). <strong>0% CPU/GPU overhead</strong>. Instant response. Ideal for lower-spec PCs.
++          </p>
++        </div>
++
++        {/* Edge-TTS Neural Option */}
++        <div
++          onClick={() => handleEngineChange('edge')}
++          style={{
++            padding: 16,
++            borderRadius: 12,
++            border: config.engine === 'edge' ? `2px solid ${T.green}` : `1px solid ${T.border}`,
++            backgroundColor: config.engine === 'edge' ? 'rgba(34,197,94,0.06)' : T.cardHov,
++            cursor: 'pointer',
++            transition: 'all 0.15s ease',
++          }}
++        >
++          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
++            <span style={{ fontSize: 14, fontWeight: 700, color: T.text0 }}>🎙️ High-Quality Neural</span>
++            {config.engine === 'edge' && (
++              <span style={{ fontSize: 10, fontWeight: 800, color: T.green, textTransform: 'uppercase' }}>Active</span>
++            )}
++          </div>
++          <p style={{ fontSize: 11, color: T.text2, margin: 0, lineHeight: 1.4 }}>
++            Human-sounding neural voice (Edge-TTS via local bridge). Natural pitch and phrasing.
++          </p>
++        </div>
++      </div>
++
++      {/* Voice & Speed Controls */}
++      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
++        {/* Voice Dropdown */}
++        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
++          <label style={{ fontSize: 11, fontWeight: 600, color: T.text2, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
++            Select Voice Actor
++          </label>
++          <select
++            value={config.voiceId}
++            onChange={(e) => handleVoiceChange(e.target.value)}
++            style={{
++              backgroundColor: T.cardHov,
++              border: `1px solid ${T.border}`,
++              borderRadius: 10,
++              padding: '10px 14px',
++              fontSize: 13,
++              color: T.text0,
++              outline: 'none',
++              width: '100%',
++              fontFamily: 'inherit',
++              cursor: 'pointer',
++            }}
++          >
++            {voices.map((v) => (
++              <option key={v.id} value={v.id}>
++                {v.name}
++              </option>
++            ))}
++          </select>
++        </div>
++
++        {/* Speed Slider */}
++        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
++          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
++            <label style={{ fontSize: 11, fontWeight: 600, color: T.text2, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
++              Speaking Speed
++            </label>
++            <span style={{ fontSize: 12, fontWeight: 700, color: T.green }}>{config.rate.toFixed(1)}x</span>
++          </div>
++          <input
++            type="range"
++            min="0.8"
++            max="1.5"
++            step="0.1"
++            value={config.rate}
++            onChange={(e) => handleRateChange(parseFloat(e.target.value))}
++            style={{ width: '100%', accentColor: T.green, cursor: 'pointer' }}
++          />
++        </div>
++      </div>
++
++      {/* Preview Button */}
++      <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
++        <button
++          onClick={handlePreview}
++          style={{
++            backgroundColor: isPlayingPreview ? 'rgba(239,68,68,0.15)' : T.green,
++            color: isPlayingPreview ? '#ef4444' : '#000',
++            fontWeight: 700,
++            fontSize: 13,
++            padding: '10px 20px',
++            borderRadius: 10,
++            border: isPlayingPreview ? '1px solid rgba(239,68,68,0.3)' : 'none',
++            cursor: 'pointer',
++            display: 'flex',
++            alignItems: 'center',
++            gap: 8,
++          }}
++        >
++          {isPlayingPreview ? '⏹ Stop Sample Voice' : '🔊 Test Voice Sample'}
++        </button>
++      </div>
++    </div>
++  );
++}
+diff --git a/src/lib/audio.ts b/src/lib/audio.ts
+new file mode 100644
+index 0000000..4673616
+--- /dev/null
++++ b/src/lib/audio.ts
+@@ -0,0 +1,26 @@
++import { ttsManager } from './tts/ttsManager';
++
++export interface SpeechSyncOptions {
++  onSentenceStart?: (sentence: string, index: number) => void;
++  onEnd?: () => void;
++  onError?: (err: unknown) => void;
++}
++
++export function isSpeechSynthesisAvailable(): boolean {
++  return typeof window !== 'undefined' && 'speechSynthesis' in window;
++}
++
++export function speakText(text: string, options?: SpeechSyncOptions): () => void {
++  ttsManager.speak(text, {
++    onEnd: options?.onEnd,
++    onError: options?.onError,
++  });
++
++  return () => {
++    ttsManager.stop();
++  };
++}
++
++export function stopSpeech(): void {
++  ttsManager.stop();
++}
+diff --git a/src/lib/bridge.ts b/src/lib/bridge.ts
+index 7e692be..2c25b9a 100644
+--- a/src/lib/bridge.ts
++++ b/src/lib/bridge.ts
+@@ -84,6 +84,7 @@ export interface InterviewChatParams {
+   role: string;
+   company: string;
+   difficulty: string;
++  systemPrompt?: string;
+   messages: { role: 'user' | 'assistant' | 'system'; content: string }[];
+   signal?: AbortSignal;
+   onToken?: (text: string) => void;
+@@ -102,6 +103,7 @@ export async function streamInterviewChat(params: InterviewChatParams): Promise<
+       role: params.role,
+       company: params.company,
+       difficulty: params.difficulty,
++      systemPrompt: params.systemPrompt,
+       messages: params.messages,
+     }),
+   });
+diff --git a/src/lib/prompts.ts b/src/lib/prompts.ts
+new file mode 100644
+index 0000000..14d04c0
+--- /dev/null
++++ b/src/lib/prompts.ts
+@@ -0,0 +1,316 @@
++export type InterviewType =
++  | 'behavioral'
++  | 'system-design'
++  | 'technical'
++  | 'product'
++  | 'custom';
++
++export type Difficulty = 'easy' | 'medium' | 'hard';
++
++export interface InterviewPromptInput {
++  interviewType: InterviewType | string;
++  role: string;
++  company: string;
++  difficulty: Difficulty | string;
++  jobDescription?: string;
++}
++
++export interface TurnScores {
++  clarity: number;
++  structure: number;
++  confidence: number;
++  depth: number;
++}
++
++export interface TurnScoresWithReasoning extends TurnScores {
++  reasoning?: string;
++}
++
++export interface EvaluationReport {
++  scores: {
++    clarity: number;
++    structure: number;
++    confidence: number;
++    depth: number;
++    communication: number;
++    technical_accuracy: number;
++  };
++  strengths: string[];
++  improvements: string[];
++  standout_moment: string;
++  critical_miss: string;
++  overall_verdict: 'Strong Hire' | 'Hire' | 'No Hire' | 'Strong No Hire';
++  summary: string;
++}
++
++// ---------------------------------------------------------------------------
++// Company calibration
++// ---------------------------------------------------------------------------
++const COMPANY_CALIBRATION: Record<string, string> = {
++  Google:
++    'Google sets an exceptionally high bar. Expect candidates to demonstrate ownership, handle ambiguity at scale, and show Googleyness. Generic textbook answers score 60–70. Only answers with concrete metrics, genuine personal insight, and sophisticated trade-off reasoning score 85+.',
++  Meta:
++    'Meta values speed, impact, and concrete metrics above all. Look for "move fast" mindset, explicit impact numbers, and direct communication. Hedging or over-qualifying language lowers confidence scores.',
++  Amazon:
++    'Amazon interviews are LP-heavy. Evaluate explicitly against Leadership Principles: Customer Obsession, Ownership, Bias for Action, Dive Deep. Answers without a clear LP alignment score lower on structure.',
++  Microsoft:
++    'Microsoft values growth mindset, inclusive collaboration, and clarity of thinking. Look for self-awareness, learning from failure, and cross-functional empathy.',
++  Stripe:
++    'Stripe values rigorous thinking, user empathy, and systems mastery. Expect precision in technical answers and clear user-centric reasoning in product decisions.',
++  default:
++    'Standard tier-1 tech company calibration. Answers should be clear, structured, and substantiated with real examples.',
++};
++
++function getCompanyCalibration(company: string): string {
++  for (const key of Object.keys(COMPANY_CALIBRATION)) {
++    if (key !== 'default' && company.toLowerCase().includes(key.toLowerCase())) {
++      return COMPANY_CALIBRATION[key];
++    }
++  }
++  return COMPANY_CALIBRATION.default;
++}
++
++// ---------------------------------------------------------------------------
++// Interviewer system prompt
++// ---------------------------------------------------------------------------
++// ---------------------------------------------------------------------------
++// Interviewer system prompt
++// ---------------------------------------------------------------------------
++const TYPE_FOCUS: Record<string, string> = {
++  behavioral: `You are a seasoned, direct hiring manager conducting a behavioral interview. You speak naturally, starting with conversational acknowledgments (e.g., "Got it," "That makes sense," "Interesting perspective.") rather than rigid templates.
++Focus on: ownership, conflict resolution, technical leadership, scaling issues, handling failure, and stress under pressure.
++
++Interrogation guidelines:
++- Begin topics with comfortable, moderate-length baseline questions. 
++- As topics develop, probe sharply with short, targeted follow-ups to catch candidate off-guard.
++- When transitioning to a new topic, do not announce it explicitly. Pivot unexpectedly but keep it within the bounds of this behavioral role (e.g., shifting suddenly from team conflict to a situation of personal technical failure).`,
++
++  'system-design': `You are a senior principal architect running a system design round. You are supportive but hold a high bar. You speak like a real engineer co-designing a whiteboard solution.
++Opening questions should be broad (e.g., "Let's build a real-time notification engine for 100M users."). Keep it simple to start.
++Once the candidate outlines their architecture, pivot sharply to edge cases or failure modes without warning:
++- "What happens when our primary message queue is partition-isolated? Walk me through the replication lag recovery."
++- "You're scaling the read path 10x overnight. How do you handle cache hotkeys?"
++Keep the transitions direct and demanding to simulate real system-design pressure.`,
++
++  technical: `You are a staff engineer debug-probing. You focus on actual production incidents, design decisions, APIs, and real-world system failures — not textbook definitions.
++Speak conversationally, but maintain a high bar of technical precision.
++Ask moderate-length scenario questions. Once the candidate explains their solution, introduce an unexpected constraint or failure:
++- "Okay, but what if your database connection pool is completely saturated and you can't add replica nodes?"
++- "Let's say a dependency goes down. How does your fallback pattern degrade gracefully without cascading failures?"`,
++
++  product: `You are a lead product manager. Focus on prioritization, metric decay, trade-offs, and target audience empathy.
++Your questions should sound conversational and pragmatic. Avoid using academic PM jargon exclusively.
++Start with a general product task, then suddenly introduce a business constraint (e.g., "Our DAU drops 15% immediately after launch because the engineering team missed a key dependency. How do you prioritize resolving this under stakeholder fire?").`,
++
++  custom: `You are an experienced interviewer conducting a realistic mock simulation. Your tone is conversational, human, and professional.
++Do not read off a script. Listen to the candidate's last answer, acknowledge a key point naturally, then ask a question that continues or pivots to a related sub-topic to keep the candidate on their toes.`,
++};
++
++const DIFFICULTY_HINT: Record<string, string> = {
++  easy:
++    'Provide conversational encouragement and clear guidance. Keep questions accessible, and follow up gently.',
++  medium:
++    'Maintain a professional, conversational tone. Probe once or twice when answers lack specifics. Pivot topics naturally but unexpectedly.',
++  hard:
++    'Create a high-pressure, realistic simulation. Challenge vague answers immediately with short, direct follow-ups. Transition between sub-topics abruptly to test adaptation. Maintain an objective, slightly critical stance to simulate real-life interview tension.',
++};
++
++/**
++ * Build the interviewer system prompt — rich, conversational, realistic, and calibrated
++ * to simulate authentic interview environments.
++ */
++export function buildInterviewerSystemPrompt(input: InterviewPromptInput): string {
++  const type = input.interviewType in TYPE_FOCUS ? input.interviewType : 'custom';
++  const difficulty = input.difficulty in DIFFICULTY_HINT ? input.difficulty : 'medium';
++  const role = input.role?.trim() || 'Software Engineer';
++  const company = input.company?.trim() || 'a tech company';
++  const jdText = input.jobDescription?.trim()
++    ? `TARGET JOB DESCRIPTION:\n${input.jobDescription.slice(0, 1500)}\n(Tailor your technical questions, domain terms, and expectations specifically to this Job Description).`
++    : '';
++
++  return [
++    `You are a professional human interviewer conducting a ${difficulty}-difficulty ${type} mock interview.`,
++    `Candidate is applying for: ${role} at ${company}.`,
++    jdText,
++    '',
++    TYPE_FOCUS[type],
++    '',
++    DIFFICULTY_HINT[difficulty],
++    '',
++    'HUMANIZATION & CONVERSATIONAL CONSTRAINTS:',
++    '- Speak conversationally like a real human. Use brief filler phrases or casual transitions (e.g., "Got it," "That makes sense," "Let\'s shift gears slightly," "Interesting, so...") to start your reply.',
++    '- Vary question lengths: Ask moderate-length, detailed questions to start a topic, and use very short, sharp follow-up questions when drilling into a candidate\'s specific answer.',
++    '- Surprise the candidate: When moving to a new topic or question, pivot suddenly and unexpectedly without explicitly announcing "now we are moving to...". Shifting topics abruptly simulates real interview pressure.',
++    '- Ask exactly ONE question per response. Never bundle multiple questions together.',
++    '- Do not speak in long, essay-style lectures. Keep it interactive.',
++    '- If this is the start of the session, greet the candidate briefly (1-2 sentences) and launch straight into the first question. No extended small talk.',
++  ].filter(Boolean).join('\n');
++}
++
++// ---------------------------------------------------------------------------
++// Generation options — tuned for small local models (3B–8B class)
++// ---------------------------------------------------------------------------
++export function defaultGenerationOptions(difficulty: string = 'medium'): Record<string, number> {
++  const hard = difficulty === 'hard';
++  return {
++    temperature: hard ? 0.55 : 0.45,
++    top_p: 0.9,
++    num_predict: hard ? 200 : 160,
++    repeat_penalty: 1.15,
++  };
++}
++
++// ---------------------------------------------------------------------------
++// Per-turn scoring
++// ---------------------------------------------------------------------------
++
++export function buildTurnScorePrompt(
++  question: string,
++  answer: string,
++  interviewType: string,
++  opts?: {
++    role?: string;
++    company?: string;
++    difficulty?: string;
++    turnIndex?: number;
++  }
++): {
++  system: string;
++  user: string;
++  options: Record<string, number>;
++} {
++  const role = opts?.role || 'Software Engineer';
++  const company = opts?.company || 'a tech company';
++  const difficulty = opts?.difficulty || 'medium';
++  const turnIndex = opts?.turnIndex ?? 1;
++  const calibration = getCompanyCalibration(company);
++
++  const system = [
++    `You are an expert ${interviewType} interview evaluator for ${difficulty}-level ${role} positions at top tech companies.`,
++    '',
++    'Score the candidate answer on 4 dimensions. Return ONLY valid JSON with no markdown, no explanation outside the JSON.',
++    '',
++    'SCORING RUBRIC:',
++    '',
++    'clarity (0–100): Is the answer easy to understand? Are ideas expressed precisely without filler?',
++    'structure (0–100): Logical flow and organization appropriate to the interview type.',
++    'confidence (0–100): Does the candidate sound certain, decisive, and ownership-driven?',
++    'depth (0–100): Does the answer go beyond surface level? Are concrete specifics, examples, or technical nuance present?',
++    '',
++    `CALIBRATION FOR ${company.toUpperCase()}:`,
++    calibration,
++    '',
++    'JSON SCHEMA (no markdown, return ONLY this):',
++    '{"clarity":0-100,"structure":0-100,"confidence":0-100,"depth":0-100,"reasoning":"1 concise sentence explaining the scores"}',
++  ].join('\n');
++
++  const user = [
++    `Interview context: ${interviewType} interview (${difficulty} difficulty) for ${role} at ${company}`,
++    `Turn: ${turnIndex}`,
++    '',
++    `Question asked: ${question.slice(0, 600)}`,
++    '',
++    `Candidate's answer: ${answer.slice(0, 1000)}`,
++    '',
++    'Score this answer using the rubric. Be honest and calibrated.',
++  ].join('\n');
++
++  return {
++    system,
++    user,
++    options: {
++      temperature: 0.15,
++      top_p: 0.85,
++      num_predict: 120,
++      repeat_penalty: 1.1,
++    },
++  };
++}
++
++export function parseTurnScores(raw: string): TurnScoresWithReasoning | null {
++  const match = raw.match(/\{[\s\S]*\}/);
++  if (!match) return null;
++  try {
++    const obj = JSON.parse(match[0]) as Record<string, unknown>;
++    const clamp = (n: unknown) => {
++      const v = typeof n === 'number' ? n : Number(n);
++      if (!Number.isFinite(v)) return null;
++      return Math.max(0, Math.min(100, Math.round(v)));
++    };
++    const clarity = clamp(obj.clarity);
++    const structure = clamp(obj.structure);
++    const confidence = clamp(obj.confidence);
++    const depth = clamp(obj.depth);
++    if (clarity == null || structure == null || confidence == null || depth == null) return null;
++    const reasoning = typeof obj.reasoning === 'string' ? obj.reasoning : undefined;
++    return { clarity, structure, confidence, depth, reasoning };
++  } catch {
++    return null;
++  }
++}
++
++export function averageTurnScores(turns: TurnScores[]): TurnScores {
++  if (turns.length === 0) {
++    return { clarity: 72, structure: 72, confidence: 72, depth: 72 };
++  }
++  const sum = turns.reduce(
++    (a, t) => ({
++      clarity: a.clarity + t.clarity,
++      structure: a.structure + t.structure,
++      confidence: a.confidence + t.confidence,
++      depth: a.depth + t.depth,
++    }),
++    { clarity: 0, structure: 0, confidence: 0, depth: 0 }
++  );
++  const n = turns.length;
++  return {
++    clarity: Math.round(sum.clarity / n),
++    structure: Math.round(sum.structure / n),
++    confidence: Math.round(sum.confidence / n),
++    depth: Math.round(sum.depth / n),
++  };
++}
++
++const CLOSING_PRESETS = {
++  strong: [
++    'Thanks for your time — that was a genuinely strong interview.',
++    'Appreciate the thoughtful answers. You demonstrated clear ownership and depth.',
++    'Good session. You communicated with confidence and backed your points with specifics.',
++  ],
++  mixed: [
++    'Thanks for walking through those answers with me.',
++    'Appreciate your time — there were strong moments, and a few areas worth tightening.',
++    'Good effort today. A bit more structure and specifics would take this to the next level.',
++  ],
++  weak: [
++    'Thanks for your time today. There are clear areas to focus on before your next interview.',
++    'Appreciate you working through the questions — depth and structure need more practice.',
++    'Thanks for the session. Focus on concrete examples with measurable outcomes going forward.',
++  ],
++} as const;
++
++export function pickClosingPreset(avgOverall: number): string {
++  const bucket = avgOverall >= 82 ? 'strong' : avgOverall >= 70 ? 'mixed' : 'weak';
++  const list = CLOSING_PRESETS[bucket];
++  return list[Math.floor(Math.random() * list.length)];
++}
++
++export function buildClosingBlurbPrompt(input: {
++  role: string;
++  company: string;
++  lastAnswer: string;
++  avgOverall: number;
++}): { system: string; user: string; options: Record<string, number> } {
++  return {
++    system: [
++      'You are wrapping up a mock interview as the professional human interviewer.',
++      'Write ONE honest sentence (max 20 words) about the candidate\'s overall performance.',
++    ].join(' '),
++    user: [
++      `Role: ${input.role} at ${input.company}.`,
++      `Overall performance level: ${input.avgOverall}/100.`,
++      `Last answer excerpt: ${input.lastAnswer.slice(0, 350)}`,
++    ].join('\n'),
++    options: { temperature: 0.5, top_p: 0.9, num_predict: 50, repeat_penalty: 1.1 },
++  };
++}
+diff --git a/src/lib/tts/edgeTTSEngine.ts b/src/lib/tts/edgeTTSEngine.ts
+new file mode 100644
+index 0000000..8320066
+--- /dev/null
++++ b/src/lib/tts/edgeTTSEngine.ts
+@@ -0,0 +1,141 @@
++import { ITTSEngine, SpeakOptions, TTSConfig, TTSEngineMode, TTSVoiceOption } from './types';
++import { normalizeBridgeUrl } from '../bridge';
++
++export const EDGE_NEURAL_VOICES: TTSVoiceOption[] = [
++  { id: 'en-US-AvaNeural', name: 'Ava (US English - Female Neural)', lang: 'en-US', engine: 'edge', gender: 'female' },
++  { id: 'en-US-AndrewNeural', name: 'Andrew (US English - Male Neural)', lang: 'en-US', engine: 'edge', gender: 'male' },
++  { id: 'en-US-EmmaNeural', name: 'Emma (US English - Female Neural)', lang: 'en-US', engine: 'edge', gender: 'female' },
++  { id: 'en-US-BrianNeural', name: 'Brian (US English - Male Neural)', lang: 'en-US', engine: 'edge', gender: 'male' },
++  { id: 'en-GB-SoniaNeural', name: 'Sonia (UK English - Female Neural)', lang: 'en-GB', engine: 'edge', gender: 'female' },
++  { id: 'en-GB-RyanNeural', name: 'Ryan (UK English - Male Neural)', lang: 'en-GB', engine: 'edge', gender: 'male' },
++  { id: 'en-IN-NeerjaNeural', name: 'Neerja (Indian English - Female Neural)', lang: 'en-IN', engine: 'edge', gender: 'female' },
++  { id: 'en-IN-PrabhatNeural', name: 'Prabhat (Indian English - Male Neural)', lang: 'en-IN', engine: 'edge', gender: 'male' },
++];
++
++export class EdgeTTSEngine implements ITTSEngine {
++  readonly mode: TTSEngineMode = 'edge';
++
++  private activeAudio: HTMLAudioElement | null = null;
++  private currentAbortController: AbortController | null = null;
++
++  public async getVoices(): Promise<TTSVoiceOption[]> {
++    return EDGE_NEURAL_VOICES;
++  }
++
++  public speak(text: string, config: TTSConfig, options?: SpeakOptions): Promise<void> {
++    return new Promise(async (resolve) => {
++      this.stop();
++
++      const cleaned = text.trim();
++      if (!cleaned) {
++        options?.onEnd?.();
++        return resolve();
++      }
++
++      this.currentAbortController = new AbortController();
++      const signal = options?.signal || this.currentAbortController.signal;
++
++      if (signal.aborted) {
++        options?.onEnd?.();
++        return resolve();
++      }
++
++      signal.addEventListener('abort', () => {
++        this.stop();
++        resolve();
++      });
++
++      try {
++        const bridgeUrl = this.getBridgeUrl();
++        const voice = config.voiceId || 'en-US-AvaNeural';
++        const rate = `${Math.round((config.rate - 1.0) * 100)}%`;
++
++        const res = await fetch(`${bridgeUrl}/tts/generate`, {
++          method: 'POST',
++          headers: { 'Content-Type': 'application/json' },
++          signal,
++          body: JSON.stringify({
++            text: cleaned,
++            voice,
++            rate: rate.startsWith('-') || rate.startsWith('+') ? rate : `+${rate}`,
++            pitch: '+0Hz',
++          }),
++        });
++
++        if (!res.ok) {
++          throw new Error(`Edge-TTS bridge endpoint returned ${res.status}`);
++        }
++
++        const blob = await res.blob();
++        if (signal.aborted) {
++          options?.onEnd?.();
++          return resolve();
++        }
++
++        const audioUrl = URL.createObjectURL(blob);
++        const audio = new Audio(audioUrl);
++        audio.volume = config.volume ?? 1.0;
++        this.activeAudio = audio;
++
++        audio.onplay = () => {
++          options?.onStart?.();
++        };
++
++        audio.onended = () => {
++          URL.revokeObjectURL(audioUrl);
++          this.activeAudio = null;
++          options?.onEnd?.();
++          resolve();
++        };
++
++        audio.onerror = (err) => {
++          URL.revokeObjectURL(audioUrl);
++          this.activeAudio = null;
++          options?.onError?.(err);
++          options?.onEnd?.();
++          resolve();
++        };
++
++        await audio.play();
++      } catch (err) {
++        if ((err as Error).name === 'AbortError') {
++          options?.onEnd?.();
++          return resolve();
++        }
++        options?.onError?.(err);
++        options?.onEnd?.();
++        resolve();
++      }
++    });
++  }
++
++  public stop(): void {
++    if (this.currentAbortController) {
++      this.currentAbortController.abort();
++      this.currentAbortController = null;
++    }
++    if (this.activeAudio) {
++      try {
++        this.activeAudio.pause();
++        this.activeAudio.currentTime = 0;
++      } catch {
++        /* ignore */
++      }
++      this.activeAudio = null;
++    }
++  }
++
++  private getBridgeUrl(): string {
++    if (typeof window === 'undefined') return 'http://localhost:11435';
++    try {
++      const raw = localStorage.getItem('abhyas.bridge');
++      if (raw) {
++        const parsed = JSON.parse(raw);
++        if (parsed?.bridgeUrl) return normalizeBridgeUrl(parsed.bridgeUrl);
++      }
++    } catch {
++      /* ignore */
++    }
++    return 'http://localhost:11435';
++  }
++}
+diff --git a/src/lib/tts/ttsManager.ts b/src/lib/tts/ttsManager.ts
+new file mode 100644
+index 0000000..9688a98
+--- /dev/null
++++ b/src/lib/tts/ttsManager.ts
+@@ -0,0 +1,151 @@
++import { DEFAULT_TTS_CONFIG, ITTSEngine, SpeakOptions, TTSConfig, TTSEngineMode, TTS_STORAGE_KEY, TTSVoiceOption } from './types';
++import { WebSpeechEngine } from './webSpeechEngine';
++import { EdgeTTSEngine } from './edgeTTSEngine';
++
++export class TTSManager {
++  private static instance: TTSManager | null = null;
++
++  private webSpeechEngine = new WebSpeechEngine();
++  private edgeEngine = new EdgeTTSEngine();
++  private activeEngine: ITTSEngine = this.webSpeechEngine;
++
++  private config: TTSConfig = DEFAULT_TTS_CONFIG;
++
++  private constructor() {
++    this.loadConfig();
++  }
++
++  public static getInstance(): TTSManager {
++    if (!TTSManager.instance) {
++      TTSManager.instance = new TTSManager();
++    }
++    return TTSManager.instance;
++  }
++
++  public getConfig(): TTSConfig {
++    return { ...this.config };
++  }
++
++  public setConfig(newConfig: Partial<TTSConfig>): void {
++    this.config = { ...this.config, ...newConfig };
++    this.saveConfig();
++    this.updateActiveEngine();
++  }
++
++  public loadConfig(): TTSConfig {
++    if (typeof window === 'undefined') return DEFAULT_TTS_CONFIG;
++    try {
++      const raw = localStorage.getItem(TTS_STORAGE_KEY);
++      if (raw) {
++        const parsed = JSON.parse(raw);
++        this.config = { ...DEFAULT_TTS_CONFIG, ...parsed };
++      }
++    } catch {
++      this.config = DEFAULT_TTS_CONFIG;
++    }
++    this.updateActiveEngine();
++    return this.config;
++  }
++
++  public saveConfig(): void {
++    if (typeof window === 'undefined') return;
++    try {
++      localStorage.setItem(TTS_STORAGE_KEY, JSON.stringify(this.config));
++    } catch {
++      /* ignore */
++    }
++  }
++
++  private updateActiveEngine(): void {
++    if (this.config.engine === 'edge') {
++      this.activeEngine = this.edgeEngine;
++    } else {
++      this.activeEngine = this.webSpeechEngine;
++    }
++  }
++
++  public async getAvailableVoices(engineMode?: TTSEngineMode): Promise<TTSVoiceOption[]> {
++    const mode = engineMode || this.config.engine;
++    if (mode === 'edge') {
++      return this.edgeEngine.getVoices();
++    }
++    return this.webSpeechEngine.getVoices();
++  }
++
++  public speak(text: string, options?: SpeakOptions): Promise<void> {
++    return this.activeEngine.speak(text, this.config, options);
++  }
++
++  public stop(): void {
++    this.webSpeechEngine.stop();
++    this.edgeEngine.stop();
++  }
++
++  /** Buffer text into completed sentence boundaries and speak them sequentially. */
++  public createSentenceStreamer(options?: SpeakOptions) {
++    let buffer = '';
++    let isSpeaking = false;
++    const sentenceQueue: string[] = [];
++    const abortController = new AbortController();
++
++    const processQueue = async () => {
++      if (isSpeaking || sentenceQueue.length === 0 || abortController.signal.aborted) return;
++
++      isSpeaking = true;
++      const sentence = sentenceQueue.shift()!;
++
++      try {
++        await this.speak(sentence, {
++          ...options,
++          signal: abortController.signal,
++        });
++      } finally {
++        isSpeaking = false;
++        if (sentenceQueue.length > 0 && !abortController.signal.aborted) {
++          processQueue();
++        }
++      }
++    };
++
++    return {
++      pushToken: (token: string) => {
++        if (abortController.signal.aborted) return;
++        buffer += token;
++
++        // Extract complete sentences ending in ., ?, !, or newline
++        const matchSentenceRegex = /([^.!?\n]+[.!?\n]+)/g;
++        let match;
++        let lastIndex = 0;
++
++        while ((match = matchSentenceRegex.exec(buffer)) !== null) {
++          const sentence = match[0].trim();
++          if (sentence) {
++            sentenceQueue.push(sentence);
++          }
++          lastIndex = matchSentenceRegex.lastIndex;
++        }
++
++        if (lastIndex > 0) {
++          buffer = buffer.slice(lastIndex);
++        }
++
++        processQueue();
++      },
++      flush: () => {
++        if (buffer.trim() && !abortController.signal.aborted) {
++          sentenceQueue.push(buffer.trim());
++          buffer = '';
++          processQueue();
++        }
++      },
++      stop: () => {
++        abortController.abort();
++        sentenceQueue.length = 0;
++        buffer = '';
++        this.stop();
++      },
++    };
++  }
++}
++
++export const ttsManager = TTSManager.getInstance();
+diff --git a/src/lib/tts/types.ts b/src/lib/tts/types.ts
+new file mode 100644
+index 0000000..b3ede6b
+--- /dev/null
++++ b/src/lib/tts/types.ts
+@@ -0,0 +1,44 @@
++/** Dual-Mode Text-to-Speech Engine Architecture for Abhyas. */
++
++export type TTSEngineMode = 'webspeech' | 'edge';
++
++export interface TTSVoiceOption {
++  id: string;
++  name: string;
++  lang: string;
++  engine: TTSEngineMode;
++  gender?: 'male' | 'female' | 'neutral';
++}
++
++export interface TTSConfig {
++  engine: TTSEngineMode;
++  voiceId: string;
++  rate: number; // 0.8 to 1.5 (default 1.0)
++  pitch: number; // 0.8 to 1.2 (default 1.0)
++  volume: number; // 0.0 to 1.0 (default 1.0)
++}
++
++export const TTS_STORAGE_KEY = 'abhyas.tts_config';
++
++export const DEFAULT_TTS_CONFIG: TTSConfig = {
++  engine: 'webspeech',
++  voiceId: '',
++  rate: 1.0,
++  pitch: 1.0,
++  volume: 1.0,
++};
++
++export interface SpeakOptions {
++  onStart?: () => void;
++  onSentenceStart?: (sentence: string, index: number) => void;
++  onEnd?: () => void;
++  onError?: (err: unknown) => void;
++  signal?: AbortSignal;
++}
++
++export interface ITTSEngine {
++  readonly mode: TTSEngineMode;
++  getVoices(): Promise<TTSVoiceOption[]>;
++  speak(text: string, config: TTSConfig, options?: SpeakOptions): Promise<void>;
++  stop(): void;
++}
+diff --git a/src/lib/tts/webSpeechEngine.ts b/src/lib/tts/webSpeechEngine.ts
+new file mode 100644
+index 0000000..fff4945
+--- /dev/null
++++ b/src/lib/tts/webSpeechEngine.ts
+@@ -0,0 +1,110 @@
++import { ITTSEngine, SpeakOptions, TTSConfig, TTSEngineMode, TTSVoiceOption } from './types';
++
++export class WebSpeechEngine implements ITTSEngine {
++  readonly mode: TTSEngineMode = 'webspeech';
++
++  private activeUtterance: SpeechSynthesisUtterance | null = null;
++
++  public isSupported(): boolean {
++    return typeof window !== 'undefined' && 'speechSynthesis' in window;
++  }
++
++  public async getVoices(): Promise<TTSVoiceOption[]> {
++    if (!this.isSupported()) return [];
++
++    return new Promise((resolve) => {
++      const load = () => {
++        const rawVoices = window.speechSynthesis.getVoices();
++        const formatted: TTSVoiceOption[] = rawVoices.map((v) => ({
++          id: v.name,
++          name: `${v.name} (${v.lang})`,
++          lang: v.lang,
++          engine: 'webspeech',
++        }));
++        resolve(formatted);
++      };
++
++      const voices = window.speechSynthesis.getVoices();
++      if (voices.length > 0) {
++        load();
++      } else {
++        window.speechSynthesis.onvoiceschanged = () => load();
++        // Fallback timeout in case event doesn't fire
++        setTimeout(() => load(), 250);
++      }
++    });
++  }
++
++  public speak(text: string, config: TTSConfig, options?: SpeakOptions): Promise<void> {
++    return new Promise((resolve) => {
++      if (!this.isSupported()) {
++        options?.onEnd?.();
++        return resolve();
++      }
++
++      this.stop();
++
++      const cleaned = text.trim();
++      if (!cleaned) {
++        options?.onEnd?.();
++        return resolve();
++      }
++
++      const utterance = new SpeechSynthesisUtterance(cleaned);
++      utterance.rate = config.rate || 1.0;
++      utterance.pitch = config.pitch || 1.0;
++      utterance.volume = config.volume ?? 1.0;
++
++      if (config.voiceId) {
++        const voices = window.speechSynthesis.getVoices();
++        const match = voices.find((v) => v.name === config.voiceId);
++        if (match) utterance.voice = match;
++      }
++
++      utterance.onstart = () => {
++        options?.onStart?.();
++      };
++
++      utterance.onend = () => {
++        this.activeUtterance = null;
++        options?.onEnd?.();
++        resolve();
++      };
++
++      utterance.onerror = (e) => {
++        this.activeUtterance = null;
++        options?.onError?.(e);
++        options?.onEnd?.();
++        resolve();
++      };
++
++      if (options?.signal) {
++        options.signal.addEventListener('abort', () => {
++          this.stop();
++          resolve();
++        });
++      }
++
++      this.activeUtterance = utterance;
++      try {
++        window.speechSynthesis.speak(utterance);
++      } catch (err) {
++        this.activeUtterance = null;
++        options?.onError?.(err);
++        options?.onEnd?.();
++        resolve();
++      }
++    });
++  }
++
++  public stop(): void {
++    if (this.isSupported()) {
++      try {
++        window.speechSynthesis.cancel();
++      } catch {
++        /* ignore */
++      }
++    }
++    this.activeUtterance = null;
++  }
++}

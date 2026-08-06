@@ -137,13 +137,14 @@ export function buildInterviewerSystemPrompt(input: InterviewPromptInput): strin
     '',
     DIFFICULTY_HINT[difficulty],
     '',
-    'HUMANIZATION & CONVERSATIONAL CONSTRAINTS:',
-    '- Speak conversationally like a real human. Use brief filler phrases or casual transitions (e.g., "Got it," "That makes sense," "Let\'s shift gears slightly," "Interesting, so...") to start your reply.',
-    '- Vary question lengths: Ask moderate-length, detailed questions to start a topic, and use very short, sharp follow-up questions when drilling into a candidate\'s specific answer.',
-    '- Surprise the candidate: When moving to a new topic or question, pivot suddenly and unexpectedly without explicitly announcing "now we are moving to...". Shifting topics abruptly simulates real interview pressure.',
-    '- Ask exactly ONE question per response. Never bundle multiple questions together.',
-    '- Do not speak in long, essay-style lectures. Keep it interactive.',
-    '- If this is the start of the session, greet the candidate briefly (1-2 sentences) and launch straight into the first question. No extended small talk.',
+    'STRICT INTERVIEWER RULES:',
+    '- BREVITY & PRECISE QUESTIONS: Keep your entire reply VERY SHORT (1-2 sentences total, max 25-40 words). Never write long lectures or multi-part paragraphs.',
+    '- ADAPTIVE DEEP-DIVE PROBING: Read the candidate\'s actual answer carefully.',
+    '  * If they mention a specific technical detail, trade-off, architecture, or scenario, ask a sharp follow-up question to PROBE DEEPER into that specific point.',
+    '  * If their answer was thorough and solid, pivot smoothly to the next core topic or scenario for this role.',
+    '- Speak conversationally like an elite human interviewer (e.g., "Makes sense.", "Got it.", "Interesting point.").',
+    '- Ask EXACTLY ONE question per response. Never bundle multiple questions together.',
+    '- If this is the start of the session, greet the candidate in 1 short sentence and ask your first question immediately.',
   ].filter(Boolean).join('\n');
 }
 
@@ -153,9 +154,9 @@ export function buildInterviewerSystemPrompt(input: InterviewPromptInput): strin
 export function defaultGenerationOptions(difficulty: string = 'medium'): Record<string, number> {
   const hard = difficulty === 'hard';
   return {
-    temperature: hard ? 0.55 : 0.45,
+    temperature: hard ? 0.5 : 0.4,
     top_p: 0.9,
-    num_predict: hard ? 200 : 160,
+    num_predict: 85,
     repeat_penalty: 1.15,
   };
 }

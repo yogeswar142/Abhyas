@@ -81,28 +81,104 @@ export class TTSManager {
     this.edgeEngine.stop();
   }
 
-  /** Buffer text into completed sentence boundaries and speak them sequentially. */
-  public createSentenceStreamer(options?: SpeakOptions) {
+  /** Buffer text into completed sentence boundaries and speak them sequentially with audio prefetching. */
+  public createSentenceStreamer(
+    options?: SpeakOptions & { onStreamStart?: () => void; onStreamEnd?: () => void }
+  ) {
     let buffer = '';
     let isSpeaking = false;
+    let isFlushed = false;
+    let hasStartedStream = false;
+    let sentenceIndex = 0;
     const sentenceQueue: string[] = [];
+    const prefetchedAudioQueue: Array<{
+      sentence: string;
+      audioPromise: Promise<HTMLAudioElement | null>;
+    }> = [];
     const abortController = new AbortController();
+
+    let resolveFinished: (() => void) | null = null;
+    const finishedPromise = new Promise<void>((resolve) => {
+      resolveFinished = resolve;
+    });
+
+    const triggerFinished = () => {
+      options?.onStreamEnd?.();
+      resolveFinished?.();
+    };
+
+    const enqueueSentence = (sentence: string) => {
+      const clean = sentence.trim();
+      if (!clean) return;
+      sentenceQueue.push(clean);
+      if (this.config.engine === 'edge') {
+        prefetchedAudioQueue.push({
+          sentence: clean,
+          audioPromise: this.edgeEngine.prefetchAudio(clean, this.config, abortController.signal),
+        });
+      }
+    };
 
     const processQueue = async () => {
       if (isSpeaking || sentenceQueue.length === 0 || abortController.signal.aborted) return;
 
+      if (!hasStartedStream) {
+        hasStartedStream = true;
+        options?.onStreamStart?.();
+      }
+
       isSpeaking = true;
       const sentence = sentenceQueue.shift()!;
+      const currentIndex = sentenceIndex++;
+      const prefetched = prefetchedAudioQueue.shift();
+
+      let wordTimer: ReturnType<typeof setInterval> | null = null;
 
       try {
-        await this.speak(sentence, {
-          ...options,
-          signal: abortController.signal,
-        });
+        let audioEl: HTMLAudioElement | null = null;
+        if (prefetched && prefetched.sentence === sentence) {
+          audioEl = await prefetched.audioPromise;
+        }
+
+        const handleStartCallbacks = () => {
+          options?.onStart?.();
+          options?.onSentenceStart?.(sentence, currentIndex);
+
+          // Word-by-word streaming synchronized to speech audio playback speed (~1.3x rate)
+          const words = sentence.trim().split(/\s+/).filter(Boolean);
+          if (words.length > 0 && options?.onWord) {
+            let wordIdx = 0;
+            const delay = Math.max(160, Math.min(280, Math.round(18000 / words.length)));
+            wordTimer = setInterval(() => {
+              if (wordIdx < words.length && !abortController.signal.aborted) {
+                options.onWord!(words[wordIdx++]);
+              } else {
+                if (wordTimer) clearInterval(wordTimer);
+              }
+            }, delay);
+          }
+        };
+
+        if (audioEl && this.config.engine === 'edge') {
+          await this.edgeEngine.playAudioElement(audioEl, {
+            ...options,
+            onStart: handleStartCallbacks,
+            signal: abortController.signal,
+          });
+        } else {
+          await this.speak(sentence, {
+            ...options,
+            onStart: handleStartCallbacks,
+            signal: abortController.signal,
+          });
+        }
       } finally {
+        if (wordTimer) clearInterval(wordTimer);
         isSpeaking = false;
         if (sentenceQueue.length > 0 && !abortController.signal.aborted) {
           processQueue();
+        } else if (isFlushed && sentenceQueue.length === 0 && !abortController.signal.aborted) {
+          triggerFinished();
         }
       }
     };
@@ -120,7 +196,7 @@ export class TTSManager {
         while ((match = matchSentenceRegex.exec(buffer)) !== null) {
           const sentence = match[0].trim();
           if (sentence) {
-            sentenceQueue.push(sentence);
+            enqueueSentence(sentence);
           }
           lastIndex = matchSentenceRegex.lastIndex;
         }
@@ -132,17 +208,23 @@ export class TTSManager {
         processQueue();
       },
       flush: () => {
+        isFlushed = true;
         if (buffer.trim() && !abortController.signal.aborted) {
-          sentenceQueue.push(buffer.trim());
+          enqueueSentence(buffer.trim());
           buffer = '';
           processQueue();
+        } else if (sentenceQueue.length === 0 && !isSpeaking && !abortController.signal.aborted) {
+          triggerFinished();
         }
       },
+      waitFinished: () => finishedPromise,
       stop: () => {
         abortController.abort();
         sentenceQueue.length = 0;
+        prefetchedAudioQueue.length = 0;
         buffer = '';
         this.stop();
+        triggerFinished();
       },
     };
   }

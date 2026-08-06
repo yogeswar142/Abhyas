@@ -284,6 +284,8 @@ export default function DashboardPage() {
       })
     : [0, 0, 0, 0, 0, 0, stats.totalHours];
 
+  const activeSession = sessions.find(s => s.status === 'in-progress' || s.status === 'scheduled');
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24, width: '100%', paddingBottom: 64 }}>
       
@@ -324,6 +326,29 @@ export default function DashboardPage() {
               Targeting <strong style={{ color: T.text0, fontWeight: 500 }}>{targetCompany}</strong> as a <strong style={{ color: T.text0, fontWeight: 500 }}>{targetRole}</strong>. 
               Your current readiness score is tracking in the top 12% of candidates.
             </p>
+
+            {activeSession && (
+              <div style={{
+                marginTop: 12, padding: '12px 16px', borderRadius: 8,
+                backgroundColor: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.3)',
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: T.green, boxShadow: '0 0 10px rgba(34,197,94,0.6)' }} />
+                  <span style={{ fontSize: 13, color: T.text0, fontWeight: 500 }}>
+                    Ongoing Session: <strong>{activeSession.company}</strong> · {activeSession.role}
+                  </span>
+                </div>
+                <Link href={`/interview/${activeSession.id}`}>
+                  <button style={{
+                    backgroundColor: T.green, color: '#000', fontWeight: 700, fontSize: 12,
+                    padding: '6px 14px', borderRadius: 6, border: 'none', cursor: 'pointer',
+                  }}>
+                    Resume Session →
+                  </button>
+                </Link>
+              </div>
+            )}
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 12, flexShrink: 0 }}>
@@ -347,7 +372,7 @@ export default function DashboardPage() {
             >
               {launching ? (
                 <div style={{ width: 16, height: 16, border: `2px solid ${T.page}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-              ) : 'Start Interview'}
+              ) : 'Start New Interview'}
             </button>
             <style dangerouslySetInnerHTML={{__html: `@keyframes spin { to { transform: rotate(360deg); } }`}} />
           </div>
@@ -472,6 +497,13 @@ export default function DashboardPage() {
                           }}>
                             Calculating…
                           </span>
+                        ) : session.status === 'in-progress' || session.status === 'scheduled' ? (
+                          <span style={{
+                            fontSize: 10, fontWeight: 700, fontFamily: 'monospace', textTransform: 'uppercase',
+                            letterSpacing: '0.06em', color: T.green,
+                          }}>
+                            In Progress
+                          </span>
                         ) : session.status === 'incomplete' ? (
                           <span style={{
                             fontSize: 10, fontWeight: 700, fontFamily: 'monospace', textTransform: 'uppercase',
@@ -488,15 +520,17 @@ export default function DashboardPage() {
 
                       <Link href={`/interview/${session.id}`}>
                         <button style={{
-                          fontSize: 12, fontWeight: 500, color: T.text0,
-                          backgroundColor: T.raised, border: `1px solid ${T.border}`,
+                          fontSize: 12, fontWeight: session.status === 'in-progress' ? 700 : 500,
+                          color: session.status === 'in-progress' ? T.green : T.text0,
+                          backgroundColor: session.status === 'in-progress' ? 'rgba(34,197,94,0.08)' : T.raised,
+                          border: session.status === 'in-progress' ? '1px solid rgba(34,197,94,0.35)' : `1px solid ${T.border}`,
                           padding: '6px 12px', borderRadius: 6, cursor: 'pointer',
                           transition: 'background 0.15s ease'
                         }}
                         onMouseEnter={e => e.currentTarget.style.backgroundColor = T.hover}
-                        onMouseLeave={e => e.currentTarget.style.backgroundColor = T.raised}
+                        onMouseLeave={e => e.currentTarget.style.backgroundColor = session.status === 'in-progress' ? 'rgba(34,197,94,0.08)' : T.raised}
                         >
-                          {analyzing ? 'Open' : session.status === 'incomplete' ? 'View' : 'Review'}
+                          {analyzing ? 'Open' : session.status === 'in-progress' || session.status === 'scheduled' ? 'Resume' : session.status === 'incomplete' ? 'View' : 'Review'}
                         </button>
                       </Link>
                     </div>

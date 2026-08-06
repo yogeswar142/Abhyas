@@ -320,7 +320,7 @@ export function AnswerComposer({
   const locked = disabled || waitingForInterviewer;
   const placeholder = locked
     ? waitingForInterviewer
-      ? 'Waiting for interviewer…'
+      ? 'Interviewer is speaking… Please listen.'
       : 'Session closed — analysis in progress…'
     : mode === 'voice'
       ? `Speak your answer — say “${VOICE_DELETE_WORD}” to delete a word…`
