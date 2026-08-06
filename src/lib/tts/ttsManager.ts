@@ -20,11 +20,12 @@ export class TTSManager {
     this.edgeEngine.onBridgeOffline = () => {
       if (this.bridgeOfflineFired) return;
       this.bridgeOfflineFired = true;
-      // Auto-fallback to webspeech silently
+      // Auto-fallback: update BOTH the active engine AND config so sentence
+      // streamer (which checks config.engine) also switches to webspeech
+      this.config = { ...this.config, engine: 'webspeech' };
       this.activeEngine = this.webSpeechEngine;
-      this.onBridgeOffline?.(() => {
-        // Callback the UI can use to show a toast
-      });
+      this.saveConfig(); // persist so next load starts with webspeech
+      this.onBridgeOffline?.(() => { /* UI toast callback */ });
     };
   }
 
@@ -51,7 +52,25 @@ export class TTSManager {
       const raw = localStorage.getItem(TTS_STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        this.config = { ...DEFAULT_TTS_CONFIG, ...parsed };
+        const merged = { ...DEFAULT_TTS_CONFIG, ...parsed };
+
+        // Migration: if stored config has engine:'edge' but NO bridge URL is
+        // configured in localStorage, the user has a stale config from before
+        // the default changed. Auto-migrate them to webspeech.
+        if (merged.engine === 'edge') {
+          try {
+            const bridgeRaw = localStorage.getItem('abhyas.bridge');
+            const hasBridge = bridgeRaw && JSON.parse(bridgeRaw)?.bridgeUrl;
+            if (!hasBridge) {
+              merged.engine = 'webspeech';
+              merged.voiceId = '';
+              // Save migrated config so it sticks
+              localStorage.setItem(TTS_STORAGE_KEY, JSON.stringify(merged));
+            }
+          } catch { /* ignore */ }
+        }
+
+        this.config = merged;
       }
     } catch {
       this.config = DEFAULT_TTS_CONFIG;
