@@ -6,6 +6,8 @@ import {
   VOICE_DELETE_WORD,
   applyAbhyasVoiceCommands,
   getSpeechRecognitionCtor,
+  getSttUnavailableMessage,
+  isBrave,
   joinUtterances,
   readSpeechTranscript,
   type SpeechRecognitionLike,
@@ -47,7 +49,7 @@ export function AnswerComposer({
   const [mode, setMode] = useState<AnswerInputMode>(speechAvailable ? 'voice' : 'keyboard');
   const [listening, setListening] = useState(false);
   const [status, setStatus] = useState(
-    speechAvailable ? 'Microphone ready' : 'Speech unavailable — use keyboard'
+    speechAvailable ? 'Microphone ready' : getSttUnavailableMessage()
   );
   const [sttFailed, setSttFailed] = useState(!speechAvailable);
   const [micDenied, setMicDenied] = useState(false);
@@ -178,7 +180,12 @@ export function AnswerComposer({
           setSttFailed(true);
           stopRecognition();
           switchMode('keyboard');
-          setStatus('Speech recognition unavailable — use keyboard');
+          // Brave-specific hint: STT network errors in Brave = Google services disabled
+          setStatus(
+            isBrave()
+              ? 'Enable Google Services in Brave (Settings → Privacy) to use the mic.'
+              : getSttUnavailableMessage()
+          );
           return;
         }
         setStatus('Speech network issue — retrying…');
@@ -407,8 +414,8 @@ export function AnswerComposer({
       {(sttFailed || micDenied) && mode === 'keyboard' && (
         <p style={{ fontSize: 11, color: '#eab308', margin: 0, lineHeight: 1.4 }}>
           {micDenied
-            ? 'Microphone access failed. Continue by typing your answers.'
-            : 'Speech recognition failed. Continue by typing your answers.'}
+            ? 'Microphone access blocked. Continue by typing your answers.'
+            : getSttUnavailableMessage()}
         </p>
       )}
 

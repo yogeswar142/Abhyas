@@ -24,6 +24,30 @@ export interface SpeechRecognitionEventLike {
 /** Voice command: saying this word removes itself and the previous word. */
 export const VOICE_DELETE_WORD = 'abhyas';
 
+/** Returns true if the browser is Firefox (no Web Speech API support). */
+export function isFirefox(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  return navigator.userAgent.includes('Firefox');
+}
+
+/** Returns true if the browser is Brave (STT requires Google services to be enabled). */
+export function isBrave(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  // Brave exposes navigator.brave — most reliable detection
+  return !!(navigator as unknown as { brave?: { isBrave?: unknown } }).brave;
+}
+
+/** Returns a browser-specific message when STT is unavailable. */
+export function getSttUnavailableMessage(): string {
+  if (isFirefox()) {
+    return 'Firefox does not support microphone input. Try Chrome or Brave.';
+  }
+  if (isBrave()) {
+    return 'Enable Google Services in Brave Settings → Privacy → Google services to use the microphone.';
+  }
+  return 'Speech recognition unavailable — use keyboard instead.';
+}
+
 export function getSpeechRecognitionCtor():
   | (new () => SpeechRecognitionLike)
   | undefined {

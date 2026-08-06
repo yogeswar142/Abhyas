@@ -188,7 +188,8 @@ export default function NewInterviewPage() {
           company: company.trim(),
           role: role.trim(),
           difficulty: difficulty,
-          duration: durationNum
+          duration: durationNum,
+          jobDescription: jobDescription.trim() || undefined,
         })
       });
 

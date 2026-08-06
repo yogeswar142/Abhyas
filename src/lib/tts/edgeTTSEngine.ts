@@ -22,6 +22,9 @@ export class EdgeTTSEngine implements ITTSEngine {
     return EDGE_NEURAL_VOICES;
   }
 
+  /** Called when bridge is unreachable — set externally by TTSManager for fallback logic */
+  public onBridgeOffline: (() => void) | null = null;
+
   public async prefetchAudio(
     text: string,
     config: TTSConfig,
@@ -49,7 +52,10 @@ export class EdgeTTSEngine implements ITTSEngine {
         }),
       });
 
-      if (!res.ok) return null;
+      if (!res.ok) {
+        this.onBridgeOffline?.();
+        return null;
+      }
       const blob = await res.blob();
       if (signal?.aborted) return null;
 
@@ -57,8 +63,18 @@ export class EdgeTTSEngine implements ITTSEngine {
       const audio = new Audio(audioUrl);
       audio.volume = config.volume ?? 1.0;
       audio.preload = 'auto';
+
+      // Fix: revoke blob URL to prevent memory leak once audio is done
+      const revoke = () => URL.revokeObjectURL(audioUrl);
+      audio.addEventListener('ended', revoke, { once: true });
+      audio.addEventListener('error', revoke, { once: true });
+
       return audio;
-    } catch {
+    } catch (err) {
+      // fetch threw — bridge is offline
+      if ((err as Error)?.name !== 'AbortError') {
+        this.onBridgeOffline?.();
+      }
       return null;
     }
   }

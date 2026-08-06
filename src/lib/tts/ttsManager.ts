@@ -10,9 +10,22 @@ export class TTSManager {
   private activeEngine: ITTSEngine = this.webSpeechEngine;
 
   private config: TTSConfig = DEFAULT_TTS_CONFIG;
+  /** Set this to get notified when EdgeTTS auto-falls back to webspeech */
+  public onBridgeOffline: ((cb: () => void) => void) | null = null;
+  private bridgeOfflineFired = false;
 
   private constructor() {
     this.loadConfig();
+    // Wire EdgeTTS engine to notify manager when bridge is offline
+    this.edgeEngine.onBridgeOffline = () => {
+      if (this.bridgeOfflineFired) return;
+      this.bridgeOfflineFired = true;
+      // Auto-fallback to webspeech silently
+      this.activeEngine = this.webSpeechEngine;
+      this.onBridgeOffline?.(() => {
+        // Callback the UI can use to show a toast
+      });
+    };
   }
 
   public static getInstance(): TTSManager {
