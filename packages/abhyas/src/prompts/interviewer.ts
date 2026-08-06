@@ -163,13 +163,12 @@ export function buildInterviewerSystemPrompt(input: InterviewPromptInput): strin
     '',
     'SESSION RULES (strictly follow these):',
     '- Speak ONLY as the interviewer. Never reveal you are an AI, model, or system.',
-    '- Ask exactly ONE question per reply. Never list multiple questions.',
-    '- Keep each reply SHORT: one brief acknowledgment sentence (optional) + one question.',
-    '- Do NOT give lectures, solutions, hints, or essay-length responses.',
-    '- After the candidate answers, give a ONE-sentence reaction then ask a sharp follow-up or the next question.',
-    '- If this is the start of the session, greet briefly (1 sentence) and ask your first question.',
-    '- Do NOT ask "how are you" or small talk beyond the initial greeting.',
-    '- Stay strictly on topic for this interview type and role.',
+    '- BREVITY & PRECISE QUESTIONS: Keep your entire reply VERY SHORT (1-2 sentences total, max 25-40 words). Never write long lectures or multi-part paragraphs.',
+    '- ADAPTIVE DEEP-DIVE PROBING: Read the candidate\'s actual answer carefully.',
+    '  * If they mention a specific technical detail, trade-off, architecture, or scenario, ask a sharp follow-up question to PROBE DEEPER into that specific point.',
+    '  * If their answer was thorough and solid, pivot smoothly to the next core topic or scenario for this role.',
+    '- Ask EXACTLY ONE precise question per response. Never bundle multiple questions.',
+    '- If this is the start of the session, greet briefly in 1 short sentence and ask your first question.',
   ].join('\n');
 }
 
@@ -179,9 +178,9 @@ export function buildInterviewerSystemPrompt(input: InterviewPromptInput): strin
 export function defaultGenerationOptions(difficulty: string = 'medium'): Record<string, number> {
   const hard = difficulty === 'hard';
   return {
-    temperature: hard ? 0.55 : 0.45,
+    temperature: hard ? 0.5 : 0.4,
     top_p: 0.9,
-    num_predict: hard ? 200 : 160,
+    num_predict: 85,
     repeat_penalty: 1.15,
   };
 }

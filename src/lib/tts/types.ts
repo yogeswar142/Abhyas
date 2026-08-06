@@ -21,9 +21,9 @@ export interface TTSConfig {
 export const TTS_STORAGE_KEY = 'abhyas.tts_config';
 
 export const DEFAULT_TTS_CONFIG: TTSConfig = {
-  engine: 'webspeech',
-  voiceId: '',
-  rate: 1.0,
+  engine: 'edge',
+  voiceId: 'en-US-AvaNeural',
+  rate: 1.3,
   pitch: 1.0,
   volume: 1.0,
 };
@@ -31,6 +31,7 @@ export const DEFAULT_TTS_CONFIG: TTSConfig = {
 export interface SpeakOptions {
   onStart?: () => void;
   onSentenceStart?: (sentence: string, index: number) => void;
+  onWord?: (word: string) => void;
   onEnd?: () => void;
   onError?: (err: unknown) => void;
   signal?: AbortSignal;

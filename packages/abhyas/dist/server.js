@@ -109,13 +109,16 @@ export function createBridgeApp(state) {
             return res.status(400).json({ error: 'No model selected. Restart bridge and pick a model.' });
         }
         const stripped = messages.filter((m) => m && m.role !== 'system');
-        const fullMessages = systemPrompt
-            ? [{ role: 'system', content: String(systemPrompt) }, ...stripped]
+        const userMessages = stripped.length === 0
+            ? [{ role: 'user', content: 'Begin the interview. Introduce yourself briefly and ask the first question.' }]
             : stripped;
+        const fullMessages = systemPrompt
+            ? [{ role: 'system', content: String(systemPrompt) }, ...userMessages]
+            : userMessages;
         const gen = {
-            temperature: difficulty === 'hard' ? 0.55 : 0.45,
+            temperature: difficulty === 'hard' ? 0.5 : 0.4,
             top_p: 0.9,
-            num_predict: difficulty === 'hard' ? 200 : 160,
+            num_predict: 85,
             repeat_penalty: 1.15,
             ...(options && typeof options === 'object' ? options : {}),
         };

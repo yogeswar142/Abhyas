@@ -1,4 +1,5 @@
 import { WebSocket } from 'ws';
+import crypto from 'crypto';
 
 export interface EdgeTtsOptions {
   text: string;
@@ -8,7 +9,7 @@ export interface EdgeTtsOptions {
   volume?: string;
 }
 
-const TRUSTED_CLIENT_TOKEN = '6A5AA1D4EA01470597E3F5183064AF59';
+const TRUSTED_CLIENT_TOKEN = '6A5AA1D4EAFF4E9FB37E23D68491D6F4';
 
 function generateRequestId(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
@@ -16,6 +17,16 @@ function generateRequestId(): string {
     const v = c === 'x' ? r : (r & 0x3) | 0x8;
     return v.toString(16);
   });
+}
+
+function generateSecMsGec(): string {
+  const WIN_EPOCH = 11644473600n;
+  const nowSec = BigInt(Math.floor(Date.now() / 1000));
+  const totalSec = nowSec + WIN_EPOCH;
+  const roundedSec = totalSec - (totalSec % 300n);
+  const fileTimeTicks = roundedSec * 10000000n;
+  const strToHash = `${fileTimeTicks}${TRUSTED_CLIENT_TOKEN}`;
+  return crypto.createHash('sha256').update(strToHash, 'ascii').digest('hex').toUpperCase();
 }
 
 /** Synthesize audio buffer using Microsoft Edge Read Aloud WebSocket API. */
@@ -26,16 +37,21 @@ export async function synthesizeEdgeTts(options: EdgeTtsOptions): Promise<Buffer
   const volume = options.volume || '+0%';
 
   const requestId = generateRequestId();
-  const wsUrl = `wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=${TRUSTED_CLIENT_TOKEN}&Sec-MS-GEC=1&Sec-MS-GEC-Version=1-130.0.2849.68`;
+  const secMsGec = generateSecMsGec();
+  const muid = crypto.randomBytes(16).toString('hex').toUpperCase();
+  const wsUrl = `wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=${TRUSTED_CLIENT_TOKEN}&Sec-MS-GEC=${secMsGec}&Sec-MS-GEC-Version=1-143.0.3650.75`;
 
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(wsUrl, {
       headers: {
         'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0',
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0',
         'Accept-Encoding': 'gzip, deflate, br',
         'Accept-Language': 'en-US,en;q=0.9',
         Pragma: 'no-cache',
+        'Cache-Control': 'no-cache',
+        Origin: 'chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold',
+        Cookie: `muid=${muid};`,
       },
     });
 
@@ -61,6 +77,7 @@ export async function synthesizeEdgeTts(options: EdgeTtsOptions): Promise<Buffer
               audio: {
                 metadataversion: 'A2Mv1',
                 wordmatchingmode: 'MicrosoftServer',
+                outputformat: 'audio-24khz-48kbitrate-mono-mp3',
               },
             },
           },

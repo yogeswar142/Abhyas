@@ -120,6 +120,7 @@ export default function ActiveSessionPage({ params }: { params: Promise<{ id: st
   const [seconds, setSeconds] = useState(0);
   const [inputText, setInputText] = useState('');
   const [isInterviewerResponding, setIsInterviewerResponding] = useState(false);
+  const [isAiSpeaking, setIsAiSpeaking] = useState(false);
   const [isSavingScores, setIsSavingScores] = useState(false);
   const [streamingText, setStreamingText] = useState('');
   const [bridge, setBridge] = useState<BridgeConfig | null>(null);
@@ -193,17 +194,23 @@ export default function ActiveSessionPage({ params }: { params: Promise<{ id: st
         });
         if (!resMessages.ok) return;
         const messagesData = await resMessages.json();
-        setMessages(messagesData || []);
+        const msgs = messagesData || [];
+        setMessages(msgs);
 
-        // Resume / report: skip prep when messages exist or session already past prep
-        if (
-          isTerminalStatus(interviewData.status) ||
-          (messagesData?.length > 0)
-        ) {
+        // Resume / report: skip prep when session is active or messages exist
+        const isTerminal = isTerminalStatus(interviewData.status);
+        if (isTerminal || msgs.length > 0 || interviewData.status === 'in-progress') {
           const cfg = loadBridgeConfig();
           if (cfg) setBridge(cfg);
           setPrepDone(true);
           setSessionPhase('live');
+
+          // If last message in history is candidate's answer, continue AI response turn seamlessly
+          const lastMsg = msgs[msgs.length - 1];
+          if (!isTerminal && lastMsg && lastMsg.sender === 'candidate' && cfg && !startedRef.current) {
+            startedRef.current = true;
+            void askInterviewer(cfg, msgs, token);
+          }
         }
       } catch (err) {
         console.error('Failed to load session:', err);
@@ -248,11 +255,7 @@ export default function ActiveSessionPage({ params }: { params: Promise<{ id: st
       body = { raw: rawText };
     }
     if (!res.ok) {
-      console.error('Error saving message:', {
-        status: res.status,
-        statusText: res.statusText,
-        body,
-      });
+      console.error(`Error saving message (${res.status} ${res.statusText}):`, body);
       return null;
     }
     return body as unknown as Message;
@@ -319,6 +322,7 @@ export default function ActiveSessionPage({ params }: { params: Promise<{ id: st
   ) => {
     setAiError('');
     setIsInterviewerResponding(true);
+    setIsAiSpeaking(true);
     setStreamingText('');
     let sawToken = false;
 
@@ -330,7 +334,17 @@ export default function ActiveSessionPage({ params }: { params: Promise<{ id: st
         difficulty: interview.difficulty,
       });
 
-      const ttsStreamer = ttsManager.createSentenceStreamer();
+      const ttsStreamer = ttsManager.createSentenceStreamer({
+        onStreamStart: () => {
+          setIsAiSpeaking(true);
+        },
+        onWord: (word) => {
+          setStreamingText((prev) => (prev ? `${prev} ${word}` : word));
+        },
+        onStreamEnd: () => {
+          setIsAiSpeaking(false);
+        },
+      });
 
       const full = await streamInterviewChat({
         bridgeUrl: cfg.bridgeUrl,
@@ -346,7 +360,6 @@ export default function ActiveSessionPage({ params }: { params: Promise<{ id: st
             sawToken = true;
             opts?.onFirstToken?.();
           }
-          setStreamingText((prev) => prev + t);
           ttsStreamer.pushToken(t);
         },
       });
@@ -357,34 +370,20 @@ export default function ActiveSessionPage({ params }: { params: Promise<{ id: st
 
       if (!sawToken) opts?.onFirstToken?.();
 
+      // Wait until TTS audio finishes speaking all words before moving to chat history
+      await ttsStreamer.waitFinished();
+
       const saved = await persistOrLocal(token, 'interviewer', full, { allowLocal: true });
       if (saved) setMessages((prev) => [...prev, saved]);
       setStreamingText('');
     } catch (err) {
+      setIsAiSpeaking(false);
       const msg =
         err instanceof Error
           ? err.message
           : "Couldn't reach the interviewer — check your connection and retry";
       setAiError(msg);
       setStreamingText('');
-
-      // Mid-session model/bridge drop → Didn't Finish (does not affect average score)
-      if (
-        sessionPhase === 'live' &&
-        !incompleteRef.current &&
-        !wrappingRef.current &&
-        isBridgeOrModelFailure(err)
-      ) {
-        const { data: { session } } = await supabase.auth.getSession();
-        const t = session?.access_token;
-        if (t) {
-          await markIncomplete(
-            t,
-            'model_closed',
-            'The interviewer connection was lost (local model closed or bridge unavailable).'
-          );
-        }
-      }
 
       throw err;
     } finally {
@@ -709,7 +708,7 @@ export default function ActiveSessionPage({ params }: { params: Promise<{ id: st
       const token = session?.access_token;
       if (!token) return;
 
-      const userMsg = await persistMessage(token, 'candidate', candidateAnswer);
+      const userMsg = await persistOrLocal(token, 'candidate', candidateAnswer, { allowLocal: true });
       if (!userMsg) return;
 
       const nextHistory = [...messages, userMsg];
@@ -1271,7 +1270,7 @@ export default function ActiveSessionPage({ params }: { params: Promise<{ id: st
               onChange={setInputText}
               onSubmit={handleSend}
               disabled={sessionLocked}
-              waitingForInterviewer={isInterviewerResponding}
+              waitingForInterviewer={isInterviewerResponding || isAiSpeaking}
               onLevelChange={setMicLevel}
               onModeChange={setAnswerMode}
             />
@@ -1280,7 +1279,7 @@ export default function ActiveSessionPage({ params }: { params: Promise<{ id: st
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
             <Card spotlight padding="none" className="bg-[var(--bg-1)] border border-[var(--border)]" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px 20px', textAlign: 'center' }}>
               <AnimatedAcousticOrb
-                active={!isInterviewerResponding && answerMode === 'voice'}
+                active={!isInterviewerResponding && !isAiSpeaking && answerMode === 'voice'}
                 level={micLevel}
               />
               <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 6 }}>
