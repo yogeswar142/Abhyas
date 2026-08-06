@@ -17,6 +17,13 @@ export class EdgeTTSEngine implements ITTSEngine {
 
   private activeAudio: HTMLAudioElement | null = null;
   private currentAbortController: AbortController | null = null;
+  /** Set by TTSManager when auto-probe detects bridge — avoids writing to localStorage */
+  private ttsOnlyBridgeUrl: string | null = null;
+
+  /** Called by TTSManager when bridge is detected, without touching abhyas.bridge localStorage */
+  public setTtsOnlyBridgeUrl(url: string): void {
+    this.ttsOnlyBridgeUrl = url;
+  }
 
   public async getVoices(): Promise<TTSVoiceOption[]> {
     return EDGE_NEURAL_VOICES;
@@ -180,6 +187,8 @@ export class EdgeTTSEngine implements ITTSEngine {
   }
 
   private getBridgeUrl(): string {
+    // In-memory override takes priority (set by TTSManager auto-probe, never writes to localStorage)
+    if (this.ttsOnlyBridgeUrl) return this.ttsOnlyBridgeUrl;
     if (typeof window === 'undefined') return 'http://localhost:11435';
     try {
       const raw = localStorage.getItem('abhyas.bridge');

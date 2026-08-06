@@ -54,6 +54,20 @@ export class TTSManager {
   public loadConfig(): TTSConfig {
     if (typeof window === 'undefined') return DEFAULT_TTS_CONFIG;
     try {
+      // One-time cleanup: previous broken probe code may have written a bare bridgeUrl
+      // (with no model) into abhyas.bridge, which blocks users on the "Connect local AI" screen.
+      // Remove it if there's no selectedModel saved (i.e., it was TTS-only, not real Ollama config).
+      try {
+        const bridgeRaw = localStorage.getItem('abhyas.bridge');
+        if (bridgeRaw) {
+          const bridgeParsed = JSON.parse(bridgeRaw);
+          if (bridgeParsed?.bridgeUrl && !bridgeParsed?.model) {
+            localStorage.removeItem('abhyas.bridge');
+            console.debug('[TTSManager] Cleaned up stale TTS-only bridge entry from abhyas.bridge');
+          }
+        }
+      } catch { /* ignore */ }
+
       const raw = localStorage.getItem(TTS_STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
@@ -69,7 +83,6 @@ export class TTSManager {
             if (!hasBridge) {
               merged.engine = 'webspeech';
               merged.voiceId = '';
-              // Save migrated config so it sticks
               localStorage.setItem(TTS_STORAGE_KEY, JSON.stringify(merged));
             }
           } catch { /* ignore */ }
@@ -125,24 +138,16 @@ export class TTSManager {
 
         if (res.ok) {
           console.debug(`[TTSManager] Bridge detected at ${bridgeUrl} — switching to Edge-TTS`);
-          // Write bridge URL to localStorage so EdgeTTSEngine can find it
-          try {
-            const existing = localStorage.getItem('abhyas.bridge');
-            const parsed = existing ? JSON.parse(existing) : {};
-            localStorage.setItem('abhyas.bridge', JSON.stringify({
-              ...parsed,
-              bridgeUrl,
-            }));
-          } catch { /* ignore */ }
-
-          // Only switch to edge if user hasn't manually chosen webspeech
-          if (this.config.engine !== 'webspeech' || this.bridgeOfflineFired === false) {
-            this.config = { ...this.config, engine: 'edge', voiceId: this.config.voiceId || 'en-US-AvaNeural' };
-            this.activeEngine = this.edgeEngine;
-            this.bridgeOfflineFired = false; // reset so fallback can fire if bridge goes down
-            this.saveConfig();
-          }
-          return; // found a working bridge, done
+          // Pass bridge URL in-memory ONLY — do NOT write to localStorage['abhyas.bridge'].
+          // That key is read by the interview flow to detect Ollama intent and would
+          // incorrectly trigger the "Connect local AI" pre-session gate.
+          this.edgeEngine.setTtsOnlyBridgeUrl(bridgeUrl);
+          this.config = { ...this.config, engine: 'edge', voiceId: this.config.voiceId || 'en-US-AvaNeural' };
+          this.activeEngine = this.edgeEngine;
+          this.bridgeOfflineFired = false;
+          // Intentionally NOT calling saveConfig() — engine stays webspeech in localStorage
+          // so if bridge isn't running on next page load, we fall back to webspeech cleanly.
+          return;
         }
       } catch {
         // Probe failed — bridge not at this URL, try next
