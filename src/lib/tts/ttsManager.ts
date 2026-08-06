@@ -117,7 +117,7 @@ export class TTSManager {
       try {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), 1500); // 1.5s probe timeout
-        const res = await fetch(`${bridgeUrl}/health`, {
+        const res = await fetch(`${bridgeUrl}/ping`, {
           signal: controller.signal,
           cache: 'no-store',
         });

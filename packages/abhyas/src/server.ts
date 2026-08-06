@@ -71,6 +71,11 @@ export function createBridgeApp(state: BridgeState) {
     }
   });
 
+  /** Simple liveness check — always 200, no Ollama dependency. Used by frontend TTS auto-probe. */
+  app.get('/ping', (_req, res) => {
+    res.json({ ok: true, port: state.port });
+  });
+
   app.post('/tts/generate', async (req, res) => {
     const { text, voice = 'en-US-AvaNeural', rate = '+0%', pitch = '+0Hz' } = req.body ?? {};
     if (!text || typeof text !== 'string') {
