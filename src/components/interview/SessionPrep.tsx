@@ -8,6 +8,7 @@ import {
   saveBridgeConfig,
   type BridgeHealth,
 } from '@/lib/bridge';
+import { useWhisper } from '@/lib/useWhisper';
 
 const T = {
   page: 'var(--v-page)',
@@ -209,154 +210,56 @@ export function SessionPrep({ onReady }: SessionPrepProps) {
   );
 }
 
-function getSpeechCtor(): (new () => SpeechRecognitionLike) | undefined {
-  if (typeof window === 'undefined') return undefined;
-  const w = window as unknown as {
-    SpeechRecognition?: new () => SpeechRecognitionLike;
-    webkitSpeechRecognition?: new () => SpeechRecognitionLike;
-  };
-  return w.SpeechRecognition || w.webkitSpeechRecognition;
-}
-
 function MicVerify({ onBack, onConfirm }: { onBack: () => void; onConfirm: () => void }) {
   const [level, setLevel] = useState(0);
   const [permission, setPermission] = useState<'pending' | 'granted' | 'denied'>('pending');
   const [heard, setHeard] = useState('');
-  const [listening, setListening] = useState(false);
-  const [speechSupported, setSpeechSupported] = useState(false);
-  const [speechStatus, setSpeechStatus] = useState('Starting speech preview…');
-  const [sttDead, setSttDead] = useState(false);
+  const [micStream, setMicStream] = useState<MediaStream | null>(null);
 
   const streamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef<number>(0);
-  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const cancelledRef = useRef(false);
-  const restartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const networkFailsRef = useRef(0);
-  const sttDeadRef = useRef(false);
-  const gotResultRef = useRef(false);
 
-  const startRecognition = (SpeechRecognition: new () => SpeechRecognitionLike) => {
-    if (cancelledRef.current || sttDeadRef.current) return;
+  const whisper = useWhisper({
+    mediaStream: micStream,
+    onResult: (text) => {
+      if (!text) return;
+      setHeard(text);
+    },
+    onError: (msg) => {
+      console.error('[MicVerify] Whisper error:', msg);
+    },
+  });
 
-    try {
-      recognitionRef.current?.stop();
-    } catch {
-      /* ignore */
-    }
-
-    const rec = new SpeechRecognition();
-    rec.continuous = true;
-    rec.interimResults = true;
-    rec.lang = typeof navigator !== 'undefined' && navigator.language ? navigator.language : 'en-US';
-
-    rec.onstart = () => {
-      if (cancelledRef.current || sttDeadRef.current) return;
-      setListening(true);
-      setSpeechStatus('Listening — speak now');
-    };
-
-    rec.onresult = (event: SpeechRecognitionEventLike) => {
-      if (sttDeadRef.current) return;
-      networkFailsRef.current = 0;
-      gotResultRef.current = true;
-      let finalText = '';
-      let interimText = '';
-      for (let i = 0; i < event.results.length; i++) {
-        const piece = event.results[i][0]?.transcript ?? '';
-        if (event.results[i].isFinal) finalText += piece;
-        else interimText += piece;
-      }
-      const combined = `${finalText}${interimText}`.replace(/\s+/g, ' ').trim();
-      if (combined) {
-        setHeard(combined);
-        setSpeechStatus('Live transcript updating');
-      }
-    };
-
-    rec.onerror = (event?: { error?: string }) => {
-      if (cancelledRef.current) return;
-      const code = event?.error || 'error';
-
-      if (code === 'not-allowed') {
-        sttDeadRef.current = true;
-        setSttDead(true);
-        setListening(false);
-        setSpeechStatus('Speech permission blocked — allow mic for this site');
-        return;
-      }
-
-      // Soft: browser pauses; onend may restart
-      if (code === 'no-speech' || code === 'aborted') return;
-
-      if (code === 'network') {
-        networkFailsRef.current += 1;
-        setListening(false);
-        // Stop the retry ↔ "Listening" flicker after 2 network failures
-        if (networkFailsRef.current >= 2) {
-          sttDeadRef.current = true;
-          setSttDead(true);
-          if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
-          try { recognitionRef.current?.stop(); } catch { /* ignore */ }
-          setSpeechStatus(
-            'Browser speech-to-text unavailable (needs Google speech cloud). Mic level still works — local Whisper STT comes later.'
-          );
-          return;
-        }
-        setSpeechStatus('Browser STT network error — trying once more…');
-        return;
-      }
-
-      setListening(false);
-      setSpeechStatus(`Speech issue (${code})`);
-    };
-
-    rec.onend = () => {
-      if (cancelledRef.current) return;
-      setListening(false);
-      if (sttDeadRef.current) return;
-
-      if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
-      restartTimerRef.current = setTimeout(() => {
-        if (cancelledRef.current || sttDeadRef.current) return;
-        startRecognition(SpeechRecognition);
-      }, gotResultRef.current ? 400 : 700);
-    };
-
-    recognitionRef.current = rec;
-    try {
-      rec.start();
-    } catch {
-      setListening(false);
-      setSpeechStatus('Could not start speech preview — click Retry STT');
-    }
-  };
-
+  // Open mic once — shared by level meter + Whisper
   useEffect(() => {
     cancelledRef.current = false;
-    sttDeadRef.current = false;
-    networkFailsRef.current = 0;
-    gotResultRef.current = false;
-
-    const SpeechRecognitionCtor = getSpeechCtor();
-    setSpeechSupported(Boolean(SpeechRecognitionCtor));
+    let audioCtx: AudioContext | null = null;
 
     (async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            channelCount: 1,
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+        });
         if (cancelledRef.current) {
           stream.getTracks().forEach((t) => t.stop());
           return;
         }
         streamRef.current = stream;
+        setMicStream(stream);
         setPermission('granted');
 
-        const ctx = new AudioContext();
-        if (ctx.state === 'suspended') {
-          try { await ctx.resume(); } catch { /* ignore */ }
+        audioCtx = new AudioContext();
+        if (audioCtx.state === 'suspended') {
+          try { await audioCtx.resume(); } catch { /* ignore */ }
         }
-        const source = ctx.createMediaStreamSource(stream);
-        const analyser = ctx.createAnalyser();
+        const source = audioCtx.createMediaStreamSource(stream);
+        const analyser = audioCtx.createAnalyser();
         analyser.fftSize = 2048;
         source.connect(analyser);
         const data = new Uint8Array(analyser.fftSize);
@@ -368,21 +271,10 @@ function MicVerify({ onBack, onConfirm }: { onBack: () => void; onConfirm: () =>
             const v = (data[i] - 128) / 128;
             sum += v * v;
           }
-          const rms = Math.sqrt(sum / data.length);
-          setLevel(Math.min(1, rms * 4.5));
+          setLevel(Math.min(1, Math.sqrt(sum / data.length) * 4.5));
           rafRef.current = requestAnimationFrame(tick);
         };
         tick();
-
-        if (SpeechRecognitionCtor) {
-          startRecognition(SpeechRecognitionCtor);
-        } else {
-          setSttDead(true);
-          sttDeadRef.current = true;
-          setSpeechStatus(
-            'This browser has no speech-to-text API. Use mic level to verify — Whisper STT comes later.'
-          );
-        }
       } catch {
         if (!cancelledRef.current) setPermission('denied');
       }
@@ -390,31 +282,51 @@ function MicVerify({ onBack, onConfirm }: { onBack: () => void; onConfirm: () =>
 
     return () => {
       cancelledRef.current = true;
-      sttDeadRef.current = true;
       cancelAnimationFrame(rafRef.current);
-      if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
-      try { recognitionRef.current?.stop(); } catch { /* ignore */ }
-      recognitionRef.current = null;
+      try { audioCtx?.close(); } catch { /* ignore */ }
       streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleRetryStt = () => {
-    const SpeechRecognitionCtor = getSpeechCtor();
-    if (!SpeechRecognitionCtor) return;
-    sttDeadRef.current = false;
-    networkFailsRef.current = 0;
-    gotResultRef.current = false;
-    setSttDead(false);
+  // Start Whisper as soon as model + mic are ready (no browser STT — it fails on Linux/Brave)
+  useEffect(() => {
+    if (permission !== 'granted' || !micStream) return;
+    if (whisper.status === 'ready' || whisper.status === 'idle') {
+      whisper.startRecording();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [permission, micStream, whisper.status]);
+
+  const handleRetry = () => {
     setHeard('');
-    setSpeechStatus('Retrying speech preview…');
-    startRecognition(SpeechRecognitionCtor);
+    if (whisper.status === 'ready' || whisper.status === 'idle' || whisper.status === 'listening') {
+      whisper.stopRecording();
+      // Allow stop to settle, then restart
+      setTimeout(() => {
+        if (!cancelledRef.current) whisper.startRecording();
+      }, 150);
+    }
   };
 
   const bars = 12;
   const activeBars = Math.min(bars, Math.round(level * bars));
   const micAlive = level > 0.08;
+  const failed = whisper.status === 'error';
+  const loading = whisper.status === 'loading';
+  const live = whisper.status === 'listening';
+
+  const statusText = failed
+    ? `Local AI failed: ${whisper.errorMsg || 'unknown error'}`
+    : loading
+      ? `Loading local AI model (${whisper.loadingProgress}%) — first load can take a minute…`
+      : live
+        ? heard
+          ? 'Local AI transcript live — keep speaking'
+          : 'Listening with local AI — say something clearly, then pause'
+        : whisper.status === 'ready'
+          ? 'Local AI ready — starting mic…'
+          : 'Starting local AI transcription…';
 
   return (
     <div style={{ backgroundColor: T.card, border: `1px solid ${T.border}`, borderRadius: 16, padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -445,11 +357,11 @@ function MicVerify({ onBack, onConfirm }: { onBack: () => void; onConfirm: () =>
           <p style={{ fontSize: 11, fontFamily: 'monospace', color: T.text3, margin: 0, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
             Input level {Math.round(level * 100)}%
             {micAlive ? ' · mic signal ok' : ' · speak louder'}
-            {!sttDead && speechSupported && listening ? ' · stt listening' : ''}
+            {live ? ' · whisper listening' : loading ? ' · loading model' : ''}
           </p>
           <div style={{
             backgroundColor: T.float,
-            border: `1px solid ${sttDead ? 'rgba(248,113,113,0.35)' : T.border}`,
+            border: `1px solid ${failed ? 'rgba(248,113,113,0.35)' : T.border}`,
             borderRadius: 12,
             padding: 14,
             minHeight: 88,
@@ -458,33 +370,35 @@ function MicVerify({ onBack, onConfirm }: { onBack: () => void; onConfirm: () =>
               <p style={{ fontSize: 10, fontFamily: 'monospace', color: T.text3, margin: 0, textTransform: 'uppercase' }}>
                 What we heard
               </p>
-              {speechSupported && (
-                <button
-                  type="button"
-                  onClick={handleRetryStt}
-                  style={{
-                    fontSize: 10, fontFamily: 'monospace', fontWeight: 700, textTransform: 'uppercase',
-                    letterSpacing: '0.06em', color: T.green, background: 'transparent',
-                    border: '1px solid rgba(34,197,94,0.35)', borderRadius: 6, padding: '4px 8px', cursor: 'pointer',
-                  }}
-                >
-                  Retry STT
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={handleRetry}
+                disabled={loading || failed || permission !== 'granted'}
+                style={{
+                  fontSize: 10, fontFamily: 'monospace', fontWeight: 700, textTransform: 'uppercase',
+                  letterSpacing: '0.06em', color: T.green, background: 'transparent',
+                  border: '1px solid rgba(34,197,94,0.35)', borderRadius: 6, padding: '4px 8px',
+                  cursor: loading || failed ? 'not-allowed' : 'pointer',
+                  opacity: loading || failed ? 0.5 : 1,
+                }}
+              >
+                Retry STT
+              </button>
             </div>
             <p style={{ fontSize: 14, color: heard ? T.text0 : T.text3, margin: 0, lineHeight: 1.5, minHeight: 42 }}>
-              {heard
-                || (sttDead
-                  ? 'No transcript — browser STT failed. Watch the level bars while you speak to confirm the mic.'
-                  : 'Say something clearly… transcript appears here live.')}
+              {heard || (failed
+                ? 'Transcription unavailable — you can still continue; use keyboard in the interview if needed.'
+                : loading
+                  ? 'Model loading… transcript will appear here once ready.'
+                  : 'Say something clearly, then pause — transcript appears here.')}
             </p>
             <p style={{
               fontSize: 11,
-              color: sttDead ? '#f87171' : T.text3,
+              color: failed ? '#f87171' : loading ? '#eab308' : T.text3,
               margin: '10px 0 0',
               lineHeight: 1.45,
             }}>
-              {speechStatus}
+              {statusText}
             </p>
           </div>
         </>
@@ -517,23 +431,4 @@ function MicVerify({ onBack, onConfirm }: { onBack: () => void; onConfirm: () =>
       </div>
     </div>
   );
-}
-
-interface SpeechRecognitionLike {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  start: () => void;
-  stop: () => void;
-  onstart: (() => void) | null;
-  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
-  onerror: ((event?: { error?: string }) => void) | null;
-  onend: (() => void) | null;
-}
-
-interface SpeechRecognitionEventLike {
-  results: {
-    length: number;
-    [i: number]: { isFinal: boolean; [j: number]: { transcript: string } };
-  };
 }

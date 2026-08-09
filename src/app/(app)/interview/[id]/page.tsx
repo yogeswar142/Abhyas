@@ -7,6 +7,9 @@ import { Card } from '@/components/ui/Card';
 import { createClient } from '@/lib/supabase/client';
 import { SessionPrep } from '@/components/interview/SessionPrep';
 import { AnswerComposer, type AnswerInputMode } from '@/components/interview/AnswerComposer';
+import { InterviewOrb, type OrbState } from '@/components/interview/orb';
+import { AmbientBackground } from '@/components/interview/AmbientBackground';
+import { CameraFeed } from '@/components/interview/CameraFeed';
 import {
   loadBridgeConfig,
   streamInterviewChat,
@@ -69,38 +72,23 @@ const SYS_LEFT = 'Interviewer has left the session.';
 const SYS_ANALYZING = 'Your interview is being analyzed. Please wait here until scoring finishes.';
 const SYS_INCOMPLETE = 'Session ended early — marked as Didn’t Finish. This does not affect your average score.';
 
-const AnimatedAcousticOrb = ({ active, level = 0 }: { active: boolean; level?: number }) => {
-  const scale = active ? 1 + Math.min(0.18, level * 0.5) : 0.95;
-  return (
-    <div style={{ position: 'relative', width: 144, height: 144, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{
-        position: 'absolute', inset: 0, borderRadius: '50%',
-        border: '1px solid rgba(34,197,94,0.12)',
-        transform: `scale(${scale})`, transition: 'transform 0.12s ease',
-        opacity: active ? 0.35 : 0.12,
-      }} />
-      <div style={{
-        position: 'absolute', inset: 16, borderRadius: '50%',
-        border: '1px solid rgba(34,197,94,0.2)',
-        transform: `scale(${scale})`, transition: 'transform 0.12s ease',
-        opacity: active ? 0.45 : 0.2,
-      }} />
-      <div style={{
-        position: 'relative', zIndex: 1, width: 64, height: 64, borderRadius: '50%',
-        backgroundColor: 'var(--bg-2)',
-        border: active ? '1px solid rgba(34,197,94,0.4)' : `1px solid ${T.border}`,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        boxShadow: active ? '0 0 30px rgba(34,197,94,0.15)' : 'none',
-      }}>
-        <svg width="20" height="24" viewBox="0 0 14 18" fill="none" style={{ color: active ? 'var(--accent)' : 'var(--text-3)' }}>
-          <rect x="3.5" y="0.75" width="7" height="10" rx="3.5" stroke="currentColor" strokeWidth="1.5" />
-          <path d="M0.75 8.5c0 3.452 2.798 6.25 6.25 6.25S13.25 11.952 13.25 8.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-          <line x1="7" y1="14.75" x2="7" y2="17.25" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-        </svg>
-      </div>
-    </div>
-  );
-};
+/** Derive the OrbState from the interview session's current situation. */
+function deriveOrbState(
+  isInterviewerResponding: boolean,
+  isAiSpeaking: boolean,
+  sessionLocked: boolean,
+  answerMode: AnswerInputMode,
+  isSavingScores: boolean,
+  interviewStatus?: string,
+): OrbState {
+  if (interviewStatus === 'completed' || interviewStatus === 'incomplete') return 'finished';
+  if (isSavingScores || interviewStatus === 'analyzing') return 'thinking';
+  if (isAiSpeaking) return 'speaking';
+  if (isInterviewerResponding) return 'thinking';
+  if (sessionLocked) return 'finished';
+  if (answerMode === 'voice') return 'listening';
+  return 'idle';
+}
 
 interface Message {
   id: string;
@@ -131,6 +119,9 @@ export default function ActiveSessionPage({ params }: { params: Promise<{ id: st
   const [connectNonce, setConnectNonce] = useState(0);
   const [micLevel, setMicLevel] = useState(0);
   const [answerMode, setAnswerMode] = useState<AnswerInputMode>('voice');
+  const [questionSecsLeft, setQuestionSecsLeft] = useState<number | null>(null);
+  const [showStarTip, setShowStarTip] = useState(false);
+  const questionTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const startedRef = useRef(false);
@@ -140,6 +131,8 @@ export default function ActiveSessionPage({ params }: { params: Promise<{ id: st
   const messagesRef = useRef<Message[]>([]);
   const interviewRef = useRef<any>(null);
   const bridgeRef = useRef<BridgeConfig | null>(null);
+  /** Ref to the stop() fn of whichever TTS streamer is currently playing. */
+  const activeStreamerStopRef = useRef<(() => void) | null>(null);
 
   messagesRef.current = messages;
   interviewRef.current = interview;
@@ -345,6 +338,8 @@ export default function ActiveSessionPage({ params }: { params: Promise<{ id: st
           setIsAiSpeaking(false);
         },
       });
+      // Expose stop() so the user can skip TTS mid-playback
+      activeStreamerStopRef.current = ttsStreamer.stop;
 
       const full = await streamInterviewChat({
         bridgeUrl: cfg.bridgeUrl,
@@ -378,6 +373,7 @@ export default function ActiveSessionPage({ params }: { params: Promise<{ id: st
       setStreamingText('');
     } catch (err) {
       setIsAiSpeaking(false);
+      activeStreamerStopRef.current = null;
       const msg =
         err instanceof Error
           ? err.message
@@ -388,6 +384,7 @@ export default function ActiveSessionPage({ params }: { params: Promise<{ id: st
       throw err;
     } finally {
       setIsInterviewerResponding(false);
+      activeStreamerStopRef.current = null;
     }
   };
 
@@ -822,6 +819,36 @@ export default function ActiveSessionPage({ params }: { params: Promise<{ id: st
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
+  const QUESTION_LIMIT_SECS = 120;
+
+  // Per-question countdown: starts when TTS finishes (isInterviewerResponding → false)
+  // and the last message is from the interviewer.
+  useEffect(() => {
+    if (isInterviewerResponding || sessionPhase !== 'live' || isSavingScores || isTerminalStatus(interview?.status)) {
+      if (questionTimerRef.current) clearInterval(questionTimerRef.current);
+      setQuestionSecsLeft(null);
+      return;
+    }
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg?.sender !== 'interviewer') return;
+
+    // Start fresh countdown
+    let remaining = QUESTION_LIMIT_SECS;
+    setQuestionSecsLeft(remaining);
+    if (questionTimerRef.current) clearInterval(questionTimerRef.current);
+    questionTimerRef.current = setInterval(() => {
+      remaining -= 1;
+      setQuestionSecsLeft(remaining);
+      if (remaining <= 0 && questionTimerRef.current) {
+        clearInterval(questionTimerRef.current);
+      }
+    }, 1000);
+    return () => {
+      if (questionTimerRef.current) clearInterval(questionTimerRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isInterviewerResponding, messages.length, sessionPhase, isSavingScores, interview?.status]);
+
   if (loading || !interview) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 400, gap: 16 }}>
@@ -1125,199 +1152,340 @@ export default function ActiveSessionPage({ params }: { params: Promise<{ id: st
           </Card>
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 24 }}>
-          <Card spotlight padding="none" className="bg-[var(--bg-1)] border border-[var(--border)]" style={{ display: 'flex', flexDirection: 'column', height: 620, overflow: 'hidden' }}>
-            <div style={{
-              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-              padding: '14px 20px', borderBottom: `1px solid ${T.border}`, backgroundColor: T.page,
-            }}>
+        <div style={{ position: 'relative', minHeight: 'calc(100vh - 120px)', display: 'flex', flexDirection: 'column', gap: 24, zIndex: 1 }}>
+          {/* Ambient neural particle mesh background at stage bottom */}
+          <AmbientBackground />
+
+          {/* Floating PIP candidate video feed */}
+          <CameraFeed micActive={answerMode === 'voice'} />
+
+          {/* Top Stage Control Header */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '12px 24px',
+              borderRadius: 16,
+              backgroundColor: 'var(--v-card)',
+              border: '1px solid var(--v-border)',
+              boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
+              backdropFilter: 'blur(16px)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <button
+                onClick={() => router.push('/dashboard')}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: T.text2,
+                  fontSize: 12,
+                  fontFamily: 'monospace',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6" /></svg>
+                Exit
+              </button>
+              <div style={{ height: 16, width: 1, backgroundColor: T.border }} />
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: interview.status === 'analyzing' ? '#eab308' : T.green }} />
-                <span style={{ fontSize: 10, fontFamily: 'monospace', fontWeight: 700, color: T.text1, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                  {interview.status === 'analyzing' ? 'Analyzing session' : 'Live transcript'}
+                <span style={{ width: 7, height: 7, borderRadius: '50%', backgroundColor: interview.status === 'analyzing' ? '#eab308' : T.green }} />
+                <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: T.text1, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                  {interview.company} • {interview.role_title}
                 </span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <span style={{ fontSize: 10, fontFamily: 'monospace', fontWeight: 700, color: T.green, textTransform: 'uppercase' }}>
-                  Question {Math.min(MAX_QUESTIONS, Math.max(1, currentQuestionNum))} of {MAX_QUESTIONS}
-                </span>
-                {(() => {
-                  const lastQ = [...messages].reverse().find((m) => m.sender === 'interviewer')?.content;
-                  if (!lastQ || isInterviewerResponding) return null;
-                  return (
-                    <button
-                      onClick={() => {
-                        stopSpeech();
-                        speakText(lastQ);
-                      }}
-                      title="Replay last question audio"
-                      style={{
-                        fontSize: 10,
-                        fontFamily: 'monospace',
-                        fontWeight: 700,
-                        textTransform: 'uppercase',
-                        color: T.green,
-                        backgroundColor: 'rgba(34,197,94,0.08)',
-                        border: '1px solid rgba(34,197,94,0.25)',
-                        borderRadius: 6,
-                        padding: '3px 8px',
-                        cursor: 'pointer',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 4,
-                      }}
-                    >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-                        <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
-                      </svg>
-                      Repeat Question
-                    </button>
-                  );
-                })()}
               </div>
             </div>
 
-            <div style={{ flex: 1, overflowY: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
-              {messages.map((msg) => {
-                if (msg.sender === 'system') {
-                  return (
-                    <div
-                      key={msg.id}
-                      style={{
-                        alignSelf: 'center',
-                        maxWidth: '90%',
-                        textAlign: 'center',
-                        padding: '8px 14px',
-                        borderRadius: 999,
-                        backgroundColor: 'rgba(255,255,255,0.04)',
-                        border: `1px solid ${T.border}`,
-                        fontSize: 11,
-                        fontFamily: 'monospace',
-                        color: T.text2,
-                        letterSpacing: '0.02em',
-                      }}
-                    >
-                      {msg.content}
-                    </div>
-                  );
-                }
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+              <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: T.green, textTransform: 'uppercase' }}>
+                Question {Math.min(MAX_QUESTIONS, Math.max(1, currentQuestionNum))} / {MAX_QUESTIONS}
+              </span>
 
+              {questionSecsLeft !== null && !isInterviewerResponding && (
+                <span
+                  style={{
+                    fontSize: 11,
+                    fontFamily: 'monospace',
+                    fontWeight: 700,
+                    color: questionSecsLeft < 30 ? '#f87171' : T.text1,
+                    backgroundColor: questionSecsLeft < 30 ? 'rgba(248,113,113,0.12)' : T.float,
+                    border: `1px solid ${questionSecsLeft < 30 ? 'rgba(248,113,113,0.3)' : T.border}`,
+                    padding: '3px 10px',
+                    borderRadius: 8,
+                  }}
+                >
+                  ⏱ {formatTime(questionSecsLeft)}
+                </span>
+              )}
+
+              {isAiSpeaking && (
+                <button
+                  onClick={() => activeStreamerStopRef.current?.()}
+                  title="Skip interviewer audio"
+                  style={{
+                    fontSize: 10, fontFamily: 'monospace', fontWeight: 700,
+                    textTransform: 'uppercase', color: T.text1,
+                    backgroundColor: T.float, border: `1px solid ${T.border}`,
+                    borderRadius: 8, padding: '4px 10px', cursor: 'pointer',
+                    display: 'inline-flex', alignItems: 'center', gap: 4,
+                  }}
+                >
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/></svg>
+                  Skip Audio
+                </button>
+              )}
+
+              {(() => {
+                const lastQ = [...messages].reverse().find((m) => m.sender === 'interviewer')?.content;
+                if (!lastQ || isInterviewerResponding) return null;
                 return (
-                  <div
-                    key={msg.id}
+                  <button
+                    onClick={() => {
+                      stopSpeech();
+                      speakText(lastQ);
+                    }}
+                    title="Replay last question audio"
                     style={{
-                      display: 'flex', flexDirection: 'column', maxWidth: '80%',
-                      alignItems: msg.sender === 'candidate' ? 'flex-end' : 'flex-start',
-                      alignSelf: msg.sender === 'candidate' ? 'flex-end' : 'flex-start',
+                      fontSize: 10, fontFamily: 'monospace', fontWeight: 700,
+                      textTransform: 'uppercase', color: T.green,
+                      backgroundColor: T.greenGhost, border: `1px solid ${T.green}40`,
+                      borderRadius: 8, padding: '4px 10px', cursor: 'pointer',
+                      display: 'inline-flex', alignItems: 'center', gap: 4,
                     }}
                   >
-                    <span style={{ fontSize: 9, fontFamily: 'monospace', color: T.text2, textTransform: 'uppercase', marginBottom: 4 }}>
-                      {msg.sender === 'candidate' ? 'You' : 'Interviewer'}
-                    </span>
-                    <div style={{
-                      padding: '12px 16px', borderRadius: 12, border: `1px solid ${T.border}`,
-                      fontSize: 13.5, lineHeight: 1.5,
-                      backgroundColor: msg.sender === 'candidate' ? T.float : 'rgba(34, 197, 94, 0.05)',
-                      borderColor: msg.sender === 'candidate' ? T.border : 'rgba(34, 197, 94, 0.15)',
-                      borderTopRightRadius: msg.sender === 'candidate' ? 0 : 12,
-                      borderTopLeftRadius: msg.sender === 'candidate' ? 12 : 0,
-                    }}>
-                      {msg.content}
-                    </div>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                      <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                    </svg>
+                    Repeat Question
+                  </button>
+                );
+              })()}
+            </div>
+          </div>
+
+          {/* Main Conversational Stage (Orb + Active Question + Transcript) */}
+          <div style={{ maxWidth: 880, width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24, flex: 1 }}>
+            
+            {/* 1. Hero Interviewer Stage (Orb Focal Centerpiece) */}
+            <Card
+              spotlight
+              padding="none"
+              className="bg-[var(--bg-1)] border border-[var(--border)]"
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '24px 24px 20px',
+                textAlign: 'center',
+                borderRadius: 24,
+                boxShadow: '0 12px 40px rgba(0, 0, 0, 0.25)',
+                position: 'relative',
+                overflow: 'hidden',
+              }}
+            >
+              {/* Living AI Orb as the Interviewer's Face */}
+              <div style={{ position: 'relative', width: 240, height: 240, margin: '0 auto' }}>
+                <InterviewOrb
+                  state={deriveOrbState(isInterviewerResponding, isAiSpeaking, sessionLocked, answerMode, isSavingScores, interview?.status)}
+                  audioLevel={micLevel}
+                  active={true}
+                  height={240}
+                />
+              </div>
+
+              {/* Active Subtitle / State Indicator */}
+              <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+                <span
+                  style={{
+                    fontSize: 10,
+                    fontFamily: 'monospace',
+                    fontWeight: 700,
+                    color: T.green,
+                    backgroundColor: T.greenGhost,
+                    padding: '4px 12px',
+                    borderRadius: 999,
+                    letterSpacing: '0.12em',
+                    textTransform: 'uppercase',
+                    border: `1px solid ${T.green}30`,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                  }}
+                >
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: T.green, boxShadow: `0 0 8px ${T.green}` }} />
+                  {isAiSpeaking ? 'Interviewer Speaking' : isInterviewerResponding ? 'Processing Question...' : answerMode === 'voice' ? 'Listening to Candidate' : 'Waiting for Answer'}
+                </span>
+              </div>
+
+              {/* Active Question Display (The focal statement) */}
+              {(() => {
+                const latestQuestion = [...messages].reverse().find((m) => m.sender === 'interviewer')?.content;
+                if (!latestQuestion) return null;
+                return (
+                  <div
+                    style={{
+                      marginTop: 16,
+                      maxWidth: 720,
+                      padding: '16px 20px',
+                      borderRadius: 16,
+                      backgroundColor: T.card,
+                      border: `1px solid ${T.border}`,
+                      textAlign: 'center',
+                      boxShadow: '0 4px 16px rgba(0,0,0,0.1)',
+                    }}
+                  >
+                    <p style={{ fontSize: 15, fontWeight: 500, color: T.text0, lineHeight: 1.6, margin: 0 }}>
+                      "{latestQuestion}"
+                    </p>
                   </div>
                 );
-              })}
+              })()}
 
-              {(isInterviewerResponding || streamingText) && (
-                <div style={{ display: 'flex', flexDirection: 'column', maxWidth: '80%', alignSelf: 'flex-start', alignItems: 'flex-start' }}>
-                  <span style={{ fontSize: 9, fontFamily: 'monospace', color: T.text2, textTransform: 'uppercase', marginBottom: 4 }}>Interviewer</span>
-                  <div style={{
-                    padding: '12px 16px', borderRadius: '12px 12px 12px 0',
-                    border: '1px solid rgba(34, 197, 94, 0.15)',
-                    backgroundColor: 'rgba(34, 197, 94, 0.05)',
-                    fontSize: 13.5, lineHeight: 1.5, minHeight: 24,
-                  }}>
-                    {streamingText || (
-                      <span style={{ display: 'inline-flex', gap: 4 }}>
-                        <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: 'var(--accent)', opacity: 0.7 }} />
-                        <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: 'var(--accent)', opacity: 0.5 }} />
-                        <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: 'var(--accent)', opacity: 0.3 }} />
-                      </span>
-                    )}
+              {/* Inline STAR Guideline Toggle Badge */}
+              <div style={{ marginTop: 12 }}>
+                <button
+                  onClick={() => setShowStarTip(!showStarTip)}
+                  style={{
+                    background: 'none',
+                    border: `1px solid ${T.border}`,
+                    borderRadius: 999,
+                    padding: '4px 12px',
+                    fontSize: 10,
+                    fontFamily: 'monospace',
+                    color: T.text2,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    backgroundColor: T.float,
+                  }}
+                >
+                  <span>💡 STAR Tip</span>
+                  <span style={{ fontSize: 9 }}>{showStarTip ? '▲ Hide' : '▼ View'}</span>
+                </button>
+
+                {showStarTip && (
+                  <div
+                    style={{
+                      marginTop: 8,
+                      padding: '10px 16px',
+                      borderRadius: 12,
+                      backgroundColor: T.card,
+                      border: `1px solid ${T.green}25`,
+                      fontSize: 11,
+                      color: T.text1,
+                      textAlign: 'center',
+                      maxWidth: 540,
+                    }}
+                  >
+                    Structure your answer: <strong style={{ color: T.green }}>Situation</strong> → <strong style={{ color: T.green }}>Task</strong> → <strong style={{ color: T.green }}>Action</strong> → <strong style={{ color: T.green }}>Result</strong>
                   </div>
-                </div>
-              )}
-
-              {aiError && (
-                <p style={{ fontSize: 12, color: '#f87171', margin: 0 }}>{aiError}</p>
-              )}
-              {saveWarning && (
-                <p style={{ fontSize: 11, color: '#eab308', margin: 0 }}>{saveWarning}</p>
-              )}
-
-              {(isSavingScores || interview.status === 'analyzing') && (
-                <div style={{ textAlign: 'center', color: T.text2, fontFamily: 'monospace', fontSize: 11, padding: '8px 0' }}>
-                  Analyzing answers and compiling scorecard…
-                </div>
-              )}
-
-              <div ref={messagesEndRef} />
-            </div>
-
-            <AnswerComposer
-              value={inputText}
-              onChange={setInputText}
-              onSubmit={handleSend}
-              disabled={sessionLocked}
-              waitingForInterviewer={isInterviewerResponding || isAiSpeaking}
-              onLevelChange={setMicLevel}
-              onModeChange={setAnswerMode}
-            />
-          </Card>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-            <Card spotlight padding="none" className="bg-[var(--bg-1)] border border-[var(--border)]" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px 20px', textAlign: 'center' }}>
-              <AnimatedAcousticOrb
-                active={!isInterviewerResponding && !isAiSpeaking && answerMode === 'voice'}
-                level={micLevel}
-              />
-              <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <span style={{
-                  alignSelf: 'center', fontSize: 9, fontFamily: 'monospace', fontWeight: 700,
-                  color: T.green, backgroundColor: 'rgba(34,197,94,0.08)',
-                  padding: '3px 8px', borderRadius: 4, letterSpacing: '0.05em', textTransform: 'uppercase',
-                }}>
-                  {answerMode === 'voice' ? 'Voice answer' : 'Keyboard answer'}
-                </span>
-                <p style={{ fontSize: 12, color: T.text2, lineHeight: 1.5, margin: '4px 0 0' }}>
-                  {answerMode === 'voice'
-                    ? 'Speak your answer, then send when ready. Switch to keyboard anytime.'
-                    : 'Type your answer below. You can switch back to the microphone if available.'}
-                </p>
+                )}
               </div>
             </Card>
 
-            <Card spotlight padding="none" className="bg-[var(--bg-1)] border border-[var(--border)]" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: 210, padding: 20 }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingBottom: 8, borderBottom: `1px solid ${T.border}` }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.green} strokeWidth="2.5">
-                    <circle cx="12" cy="12" r="10" />
-                    <line x1="12" y1="16" x2="12" y2="12" />
-                    <line x1="12" y1="8" x2="12.01" y2="8" />
-                  </svg>
-                  <h4 style={{ fontSize: 10, fontFamily: 'monospace', fontWeight: 700, color: T.text1, textTransform: 'uppercase', margin: 0 }}>STAR Guideline Tip</h4>
+            {/* 2. Active Candidate Answer & Input Stage (No bloated chatbox history) */}
+            <Card
+              spotlight
+              padding="none"
+              className="bg-[var(--bg-1)] border border-[var(--border)]"
+              style={{ display: 'flex', flexDirection: 'column', borderRadius: 24, overflow: 'hidden', boxShadow: '0 8px 32px rgba(0, 0, 0, 0.18)' }}
+            >
+              {/* Active Answer Monitor Header */}
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '12px 20px',
+                  borderBottom: `1px solid ${T.border}`,
+                  backgroundColor: T.page,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: answerMode === 'voice' ? T.green : T.text2 }} />
+                  <span style={{ fontSize: 10, fontFamily: 'monospace', fontWeight: 700, color: T.text1, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                    {answerMode === 'voice' ? 'Live Speech Response' : 'Keyboard Answer Input'}
+                  </span>
                 </div>
-                <p style={{ fontSize: 11.5, color: T.text2, lineHeight: 1.5, margin: 0 }}>
-                  Be structured. State the Situation and Task before walking through your actions.
-                </p>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {/* Optional Transcript History Toggle */}
+                  <button
+                    onClick={() => {
+                      const el = document.getElementById('history-drawer');
+                      if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+                    }}
+                    style={{
+                      background: 'none',
+                      border: `1px solid ${T.border}`,
+                      borderRadius: 6,
+                      padding: '3px 8px',
+                      fontSize: 10,
+                      fontFamily: 'monospace',
+                      color: T.text2,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    History ({messages.filter(m => m.sender !== 'system').length})
+                  </button>
+                </div>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 10, fontFamily: 'monospace', fontWeight: 700, borderTop: `1px solid ${T.border}`, paddingTop: 10 }}>
-                <span style={{ color: T.text3, textTransform: 'uppercase' }}>Input</span>
-                <span style={{ color: T.green, backgroundColor: 'rgba(34,197,94,0.08)', padding: '2px 6px', borderRadius: 4 }}>
-                  {answerMode === 'voice' ? 'Microphone' : 'Keyboard'}
-                </span>
+
+              {/* Collapsible History Drawer (hidden by default) */}
+              <div
+                id="history-drawer"
+                style={{
+                  display: 'none',
+                  maxHeight: 180,
+                  overflowY: 'auto',
+                  padding: '12px 20px',
+                  backgroundColor: T.raised,
+                  borderBottom: `1px solid ${T.border}`,
+                  fontSize: 12,
+                }}
+              >
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {messages.map((m) => (
+                    <div key={m.id} style={{ display: 'flex', gap: 8, fontSize: 11 }}>
+                      <span style={{ fontFamily: 'monospace', fontWeight: 700, color: m.sender === 'candidate' ? T.green : T.text2, textTransform: 'uppercase', width: 75, flexShrink: 0 }}>
+                        {m.sender === 'candidate' ? 'You' : 'Interviewer'}:
+                      </span>
+                      <span style={{ color: T.text1 }}>{m.content}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
+
+              {/* Status / Streaming Notices */}
+              <div style={{ padding: '16px 20px 8px' }}>
+                {aiError && <p style={{ fontSize: 12, color: '#f87171', margin: '0 0 8px' }}>{aiError}</p>}
+                {saveWarning && <p style={{ fontSize: 11, color: '#eab308', margin: '0 0 8px' }}>{saveWarning}</p>}
+
+                {(isSavingScores || interview.status === 'analyzing') && (
+                  <div style={{ textAlign: 'center', color: T.green, fontFamily: 'monospace', fontSize: 11, padding: '6px 0', backgroundColor: T.greenGhost, borderRadius: 8, border: `1px solid ${T.green}30` }}>
+                    Analyzing answer and compiling scorecard…
+                  </div>
+                )}
+              </div>
+
+              {/* Candidate Answer Composer (Mic capture + Input + Send button) */}
+              <AnswerComposer
+                value={inputText}
+                onChange={setInputText}
+                onSubmit={handleSend}
+                disabled={sessionLocked}
+                waitingForInterviewer={isInterviewerResponding || isAiSpeaking}
+                onLevelChange={setMicLevel}
+                onModeChange={setAnswerMode}
+              />
             </Card>
           </div>
         </div>

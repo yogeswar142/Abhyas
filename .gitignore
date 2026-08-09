@@ -62,6 +62,9 @@ Project-Blueprint.md
 packages/*/dist/
 backend/dist/
 
+# ML models (downloaded at runtime, too large for GitHub)
+/public/models/
+
 # scratch / junk files
 diff.patch
 *.patch

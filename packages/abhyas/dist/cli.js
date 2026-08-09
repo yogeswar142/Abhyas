@@ -77,41 +77,79 @@ async function cmdRun(flags) {
     const ollamaUrl = (typeof flags.get('ollama') === 'string' && flags.get('ollama')) ||
         process.env.OLLAMA_URL ||
         DEFAULT_OLLAMA_URL;
-    log.info('Checking Ollama…');
-    const detected = await detectOllama(ollamaUrl);
-    if (!detected.ok) {
-        log.err(detected.error ?? 'Ollama unreachable');
-        process.exit(1);
-    }
-    log.ok(`Ollama connected (${ollamaUrl})`);
-    log.info(`Models found: ${detected.models.length}`);
-    const names = detected.models.map((m) => m.name);
-    const flagModel = typeof flags.get('model') === 'string' ? flags.get('model') : undefined;
-    const selectedModel = await pickModel(names, flagModel || process.env.ABHYAS_MODEL);
+    // Find port first so server can always start
     const preferred = Number(flags.get('port') || process.env.ABHYAS_PORT || 11435) || 11435;
     let port = preferred;
     try {
         port = await findFreePort(preferred, 10);
-        if (port !== preferred) {
+        if (port !== preferred)
             log.warn(`Port ${preferred} busy → using ${port}`);
-        }
-        else {
+        else
             log.ok(`Port ${port} free`);
+    }
+    catch (err) {
+        log.err(err instanceof Error ? err.message : String(err));
+        process.exit(1);
+    }
+    // Try Ollama — NEVER crash if it's not running. Server starts regardless.
+    // /health reports Ollama status live; /tts/generate always works.
+    log.info('Checking Ollama…');
+    const detected = await detectOllama(ollamaUrl);
+    let selectedModel = '';
+    if (!detected.ok) {
+        log.warn(detected.error ?? 'Ollama not reachable — TTS still works');
+        log.info('Start Ollama on the host to enable interview AI.');
+    }
+    else {
+        log.ok(`Ollama connected (${ollamaUrl})`);
+        const names = detected.models.map((m) => m.name);
+        const flagModel = typeof flags.get('model') === 'string' ? flags.get('model') : undefined;
+        const envModel = process.env.ABHYAS_MODEL;
+        if (flagModel && names.includes(flagModel)) {
+            selectedModel = flagModel;
         }
+        else if (envModel && names.includes(envModel)) {
+            selectedModel = envModel;
+        }
+        else if (names.length >= 1) {
+            // Non-interactive (Docker): auto-pick first available model
+            selectedModel = names[0];
+            log.ok(`Auto-selected model: ${selectedModel}${names.length > 1 ? ` (${names.length} available)` : ''}`);
+        }
+    }
+    const state = { ollamaUrl, selectedModel, port };
+    const { url } = await listenBridge(state);
+    if (selectedModel)
+        startModelKeepAlive(state);
+    log.banner(url, selectedModel || '<TTS-only — start Ollama for interview AI>');
+    if (selectedModel)
+        log.info('Model keep-alive started (every 4m)');
+}
+/** Start bridge in TTS-only mode — no Ollama required. */
+async function cmdRunTtsOnly(flags) {
+    const preferred = Number(flags.get('port') || process.env.ABHYAS_PORT || 11435) || 11435;
+    let port = preferred;
+    try {
+        port = await findFreePort(preferred, 10);
+        if (port !== preferred)
+            log.warn(`Port ${preferred} busy → using ${port}`);
+        else
+            log.ok(`Port ${port} free`);
     }
     catch (err) {
         log.err(err instanceof Error ? err.message : String(err));
         process.exit(1);
     }
     const state = {
-        ollamaUrl,
-        selectedModel,
+        ollamaUrl: (typeof flags.get('ollama') === 'string' ? flags.get('ollama') : null)
+            || process.env.OLLAMA_URL
+            || DEFAULT_OLLAMA_URL,
+        selectedModel: '',
         port,
     };
     const { url } = await listenBridge(state);
-    startModelKeepAlive(state);
-    log.banner(url, selectedModel);
-    log.info('Model keep-alive started (every 4m)');
+    log.ok(`TTS-only bridge running at ${url}/tts/generate`);
+    log.info('Ollama endpoints are disabled in TTS-only mode.');
 }
 async function main() {
     const { cmd, flags } = parseArgs(process.argv);
@@ -123,6 +161,7 @@ async function main() {
 Abhyas local bridge
 
   abhyas-bridge run [--port 11435] [--model name] [--ollama http://127.0.0.1:11434]
+  abhyas-bridge run --tts-only [--port 11435]   (start without Ollama — TTS only)
   abhyas-bridge health
   abhyas-bridge models
 
@@ -134,8 +173,12 @@ Paste the printed URL into the Abhyas website Local AI settings.
         return cmdHealth(ollamaUrl);
     if (cmd === 'models')
         return cmdModels(ollamaUrl);
-    if (cmd === 'run')
+    if (cmd === 'run') {
+        // --tts-only: skip Ollama requirement, only start TTS endpoint
+        if (flags.get('tts-only'))
+            return cmdRunTtsOnly(flags);
         return cmdRun(flags);
+    }
     log.err(`Unknown command: ${cmd}`);
     process.exit(1);
 }

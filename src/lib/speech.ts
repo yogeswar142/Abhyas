@@ -24,6 +24,15 @@ export interface SpeechRecognitionEventLike {
 /** Voice command: saying this word removes itself and the previous word. */
 export const VOICE_DELETE_WORD = 'abhyas';
 
+/**
+ * Exponential backoff delay for STT restart after network errors.
+ * 0 fails → 400ms, 1 → 800ms, 2 → 1600ms, … capped at 8000ms.
+ */
+export function sttRestartDelay(networkFails: number): number {
+  if (networkFails <= 0) return 400;
+  return Math.min(400 * Math.pow(2, networkFails), 8_000);
+}
+
 /** Returns true if the browser is Firefox (no Web Speech API support). */
 export function isFirefox(): boolean {
   if (typeof navigator === 'undefined') return false;
