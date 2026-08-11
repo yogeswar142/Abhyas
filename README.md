@@ -1,4 +1,4 @@
-# Abhyas
+# Abhyas AI
 
 Most people prepare for interviews alone — reading leetcode solutions, rehearsing answers in their head, or asking a friend who's equally nervous. It doesn't work.
 
