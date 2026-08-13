@@ -46,6 +46,25 @@ export function createBridgeApp(state) {
     app.get('/ping', (_req, res) => {
         res.json({ ok: true, port: state.port });
     });
+    /**
+     * STT provider config endpoint.
+     * The frontend fetches this after connecting to the bridge to determine
+     * which STT provider to activate. Returns the resolved provider ID and
+     * optional model directory path.
+     *
+     * Response shape matches SttConfig from stt/types.ts.
+     */
+    app.get('/stt/config', (_req, res) => {
+        if (!state.sttConfig) {
+            // Bridge started without STT config (legacy / test mode) — default to browser
+            return res.json({
+                providerId: 'browser',
+                selectedAt: new Date().toISOString(),
+                modelDir: null,
+            });
+        }
+        return res.json(state.sttConfig);
+    });
     app.post('/tts/generate', async (req, res) => {
         const { text, voice = 'en-US-AvaNeural', rate = '+0%', pitch = '+0Hz' } = req.body ?? {};
         if (!text || typeof text !== 'string') {

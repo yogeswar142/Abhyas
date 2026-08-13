@@ -19,13 +19,15 @@ import {
   type TranscriptMessage,
 } from './prompts/interviewer.js';
 import { log } from './logger.js';
-
 import { synthesizeEdgeTts } from './edgetts.js';
+import type { SttConfig } from './stt/types.js';
 
 export interface BridgeState {
   ollamaUrl: string;
   selectedModel: string;
   port: number;
+  /** Resolved STT provider config from the startup flow. */
+  sttConfig?: SttConfig;
 }
 
 const KEEP_ALIVE_MS = 4 * 60 * 1000;
@@ -74,6 +76,26 @@ export function createBridgeApp(state: BridgeState) {
   /** Simple liveness check — always 200, no Ollama dependency. Used by frontend TTS auto-probe. */
   app.get('/ping', (_req, res) => {
     res.json({ ok: true, port: state.port });
+  });
+
+  /**
+   * STT provider config endpoint.
+   * The frontend fetches this after connecting to the bridge to determine
+   * which STT provider to activate. Returns the resolved provider ID and
+   * optional model directory path.
+   *
+   * Response shape matches SttConfig from stt/types.ts.
+   */
+  app.get('/stt/config', (_req, res) => {
+    if (!state.sttConfig) {
+      // Bridge started without STT config (legacy / test mode) — default to browser
+      return res.json({
+        providerId: 'browser',
+        selectedAt: new Date().toISOString(),
+        modelDir: null,
+      });
+    }
+    return res.json(state.sttConfig);
   });
 
   app.post('/tts/generate', async (req, res) => {

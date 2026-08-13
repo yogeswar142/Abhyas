@@ -4,6 +4,7 @@ import { detectOllama, DEFAULT_OLLAMA_URL } from './ollama.js';
 import { findFreePort } from './port.js';
 import { listenBridge, startModelKeepAlive } from './server.js';
 import { log } from './logger.js';
+import { runSttStartupFlow, readSttConfig, getAllSttProviders, initRegistry } from './stt/index.js';
 function parseArgs(argv) {
     const args = argv.slice(2);
     const cmd = args[0] && !args[0].startsWith('-') ? args[0] : 'run';
@@ -77,6 +78,17 @@ async function cmdRun(flags) {
     const ollamaUrl = (typeof flags.get('ollama') === 'string' && flags.get('ollama')) ||
         process.env.OLLAMA_URL ||
         DEFAULT_OLLAMA_URL;
+    // ── STT Provider Detection (runs before all other startup checks) ──────────
+    // Detects/installs local STT providers. Falls back to Browser STT silently.
+    // The resolved config is stored in ~/.abhyas/stt-config.json and exposed
+    // by the bridge server at GET /stt/config so the frontend can read it.
+    const nonInteractive = !!flags.get('non-interactive') || !!process.env.ABHYAS_NON_INTERACTIVE;
+    log.info('Initializing STT provider…');
+    const sttConfig = await runSttStartupFlow({ nonInteractive }).catch((err) => {
+        log.warn(`STT startup failed (${err instanceof Error ? err.message : String(err)}) — using Browser STT.`);
+        return { providerId: 'browser', selectedAt: new Date().toISOString(), modelDir: null };
+    });
+    // ──────────────────────────────────────────────────────────────────────────
     // Find port first so server can always start
     const preferred = Number(flags.get('port') || process.env.ABHYAS_PORT || 11435) || 11435;
     let port = preferred;
@@ -111,13 +123,22 @@ async function cmdRun(flags) {
         else if (envModel && names.includes(envModel)) {
             selectedModel = envModel;
         }
-        else if (names.length >= 1) {
-            // Non-interactive (Docker): auto-pick first available model
+        else if (names.length === 1) {
             selectedModel = names[0];
-            log.ok(`Auto-selected model: ${selectedModel}${names.length > 1 ? ` (${names.length} available)` : ''}`);
+            log.ok(`Using only model: ${selectedModel}`);
+        }
+        else if (names.length > 1) {
+            if (nonInteractive) {
+                selectedModel = names[0];
+                log.ok(`Auto-selected model: ${selectedModel} (${names.length} available)`);
+            }
+            else {
+                selectedModel = await pickModel(names);
+                log.ok(`Selected model: ${selectedModel}`);
+            }
         }
     }
-    const state = { ollamaUrl, selectedModel, port };
+    const state = { ollamaUrl, selectedModel, port, sttConfig };
     const { url } = await listenBridge(state);
     if (selectedModel)
         startModelKeepAlive(state);
@@ -127,6 +148,14 @@ async function cmdRun(flags) {
 }
 /** Start bridge in TTS-only mode — no Ollama required. */
 async function cmdRunTtsOnly(flags) {
+    // ── STT Provider Detection (runs before all other startup checks) ──────────
+    const nonInteractive = !!flags.get('non-interactive') || !!process.env.ABHYAS_NON_INTERACTIVE;
+    log.info('Initializing STT provider…');
+    const sttConfig = await runSttStartupFlow({ nonInteractive }).catch((err) => {
+        log.warn(`STT startup failed (${err instanceof Error ? err.message : String(err)}) — using Browser STT.`);
+        return { providerId: 'browser', selectedAt: new Date().toISOString(), modelDir: null };
+    });
+    // ──────────────────────────────────────────────────────────────────────────
     const preferred = Number(flags.get('port') || process.env.ABHYAS_PORT || 11435) || 11435;
     let port = preferred;
     try {
@@ -146,10 +175,51 @@ async function cmdRunTtsOnly(flags) {
             || DEFAULT_OLLAMA_URL,
         selectedModel: '',
         port,
+        sttConfig,
     };
     const { url } = await listenBridge(state);
     log.ok(`TTS-only bridge running at ${url}/tts/generate`);
     log.info('Ollama endpoints are disabled in TTS-only mode.');
+}
+/**
+ * 'stt' subcommand — lets users re-run the STT provider selection
+ * without restarting the full bridge. Useful when the user wants to
+ * switch from Browser STT to ONNX after initial skip, or vice versa.
+ */
+async function cmdStt(flags) {
+    const sub = flags.get('reset') ? 'reset' : 'status';
+    // Initialize registry so we can query providers
+    try {
+        initRegistry();
+    }
+    catch { /* already initialized in another flow */ }
+    if (sub === 'reset' || flags.get('reconfigure')) {
+        // Force re-run the startup flow interactively
+        log.info('Re-running STT provider selection…');
+        const sttConfig = await runSttStartupFlow({ nonInteractive: false });
+        log.ok(`STT provider set to: ${sttConfig.providerId}`);
+        return;
+    }
+    // Default: show current status
+    const cfg = readSttConfig();
+    if (!cfg) {
+        log.info('No STT provider configured yet. Run `abhyas-bridge run` to set one up.');
+        return;
+    }
+    const providers = getAllSttProviders();
+    console.log('');
+    console.log('  STT Provider Configuration');
+    console.log('  ──────────────────────────');
+    console.log(`  Active provider : ${cfg.providerId}`);
+    console.log(`  Selected at     : ${new Date(cfg.selectedAt).toLocaleString()}`);
+    console.log(`  Model dir       : ${cfg.modelDir ?? 'N/A (browser-based)'}`);
+    console.log('');
+    console.log('  Registered providers:');
+    providers.forEach((p) => {
+        const active = p.id === cfg.providerId ? ' ◀ active' : '';
+        console.log(`    • ${p.id}${active} — ${p.name}`);
+    });
+    console.log('');
 }
 async function main() {
     const { cmd, flags } = parseArgs(process.argv);
@@ -162,8 +232,11 @@ Abhyas local bridge
 
   abhyas-bridge run [--port 11435] [--model name] [--ollama http://127.0.0.1:11434]
   abhyas-bridge run --tts-only [--port 11435]   (start without Ollama — TTS only)
+  abhyas-bridge run --non-interactive            (skip all prompts, use saved/browser STT)
   abhyas-bridge health
   abhyas-bridge models
+  abhyas-bridge stt                              (show STT provider status)
+  abhyas-bridge stt --reconfigure                (re-run STT provider selection)
 
 Paste the printed URL into the Abhyas website Local AI settings.
 `);
@@ -173,6 +246,8 @@ Paste the printed URL into the Abhyas website Local AI settings.
         return cmdHealth(ollamaUrl);
     if (cmd === 'models')
         return cmdModels(ollamaUrl);
+    if (cmd === 'stt')
+        return cmdStt(flags);
     if (cmd === 'run') {
         // --tts-only: skip Ollama requirement, only start TTS endpoint
         if (flags.get('tts-only'))

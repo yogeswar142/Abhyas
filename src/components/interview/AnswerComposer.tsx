@@ -2,18 +2,8 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/Button';
-import {
-  VOICE_DELETE_WORD,
-  applyAbhyasVoiceCommands,
-  getSpeechRecognitionCtor,
-  getSttUnavailableMessage,
-  isBrave,
-  joinUtterances,
-  readSpeechTranscript,
-  sttRestartDelay,
-  type SpeechRecognitionLike,
-} from '@/lib/speech';
-import { useWhisper } from '@/lib/useWhisper';
+import { getSttUnavailableMessage } from '@/lib/speech';
+import { useSttProvider } from '@/lib/stt';
 
 const T = {
   page: 'var(--v-page)',
@@ -36,6 +26,8 @@ interface AnswerComposerProps {
   waitingForInterviewer: boolean;
   onLevelChange?: (level: number) => void;
   onModeChange?: (mode: AnswerInputMode) => void;
+  /** Bridge URL passed from the interview page so useSttProvider can fetch /stt/config. */
+  bridgeUrl?: string | null;
 }
 
 export function AnswerComposer({
@@ -46,267 +38,153 @@ export function AnswerComposer({
   waitingForInterviewer,
   onLevelChange,
   onModeChange,
+  bridgeUrl,
 }: AnswerComposerProps) {
-  const speechAvailable = Boolean(getSpeechRecognitionCtor());
-  const [mode, setMode] = useState<AnswerInputMode>(speechAvailable ? 'voice' : 'keyboard');
+  const [mode, setMode] = useState<AnswerInputMode>('voice');
   const [listening, setListening] = useState(false);
-  const [status, setStatus] = useState(
-    speechAvailable ? 'Microphone ready' : getSttUnavailableMessage()
-  );
-  // sttFailed = native Web Speech API is dead (but Whisper may still save us)
-  const [sttFailed, setSttFailed] = useState(!speechAvailable);
-  // whisperActive = we've switched to local Whisper STT
-  const [whisperActive, setWhisperActive] = useState(!speechAvailable);
-  // whisperFailed = even Whisper couldn't load → truly fall back to keyboard
-  const [whisperFailed, setWhisperFailed] = useState(false);
-  const [sttReconnecting, setSttReconnecting] = useState(false);
+  const [statusLabel, setStatusLabel] = useState('Initializing speech engine…');
   const [micDenied, setMicDenied] = useState(false);
+  const [allFailed, setAllFailed] = useState(false);
   const [idleNudge, setIdleNudge] = useState(false);
 
+  const formRef = useRef<HTMLFormElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef<number>(0);
-  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
-  const restartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const statusResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const formRef = useRef<HTMLFormElement | null>(null);
-  const networkFailsRef = useRef(0);
-  const sttDeadRef = useRef(!speechAvailable);
-  const cancelledRef = useRef(false);
-  const lastSpeechRef = useRef<number>(Date.now());
-  const idleTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  /** Stable text kept across recognition restarts (survives pauses). */
-  const committedRef = useRef('');
-  /** Text frozen when the current recognition session started. */
-  const baselineRef = useRef('');
   const modeRef = useRef(mode);
-  const canListenRef = useRef(false);
   const onChangeRef = useRef(onChange);
-  onChangeRef.current = onChange;
+  const cancelledRef = useRef(false);
+  const idleTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastSpeechRef = useRef<number>(Date.now());
 
-  // ── Whisper hook ──────────────────────────────────────────────────────────
-  const whisper = useWhisper({
+  onChangeRef.current = onChange;
+  modeRef.current = mode;
+
+  // ── STT Provider (provider-agnostic) ───────────────────────────────────────
+  const stt = useSttProvider({
+    bridgeUrl,
+    mediaStream: streamRef.current,
     onResult: (text, isFinal) => {
       if (!text) return;
-      // Use baselineRef so Whisper transcripts accumulate correctly
-      const prefix = baselineRef.current ? baselineRef.current + ' ' : '';
-      const combined = prefix + text;
-      onChangeRef.current(combined);
-      if (isFinal) committedRef.current = combined;
+      onChangeRef.current(text);
       lastSpeechRef.current = Date.now();
       setIdleNudge(false);
-      setStatus(isFinal ? 'Listening — local AI' : '🎙 Local AI transcript live');
+      if (isFinal) {
+        setStatusLabel(`${stt.activeProviderName} — listening`);
+      } else {
+        setStatusLabel(`🎙 ${stt.activeProviderName} — live`);
+      }
     },
     onVADSubmit: () => {
       if (formRef.current) {
         formRef.current.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
       }
     },
-    onError: (msg) => {
-      console.error('Whisper failed:', msg);
-      setWhisperFailed(true);
-      setWhisperActive(false);
+    onAllFailed: (msg) => {
+      console.error('[AnswerComposer] All STT providers failed:', msg);
+      setAllFailed(true);
       setMode('keyboard');
       modeRef.current = 'keyboard';
       onModeChange?.('keyboard');
-      setStatus('Local AI failed — switched to keyboard input');
+      setStatusLabel('All speech engines unavailable — using keyboard');
     },
   });
 
-  // ── canListen ─────────────────────────────────────────────────────────────
-  // Voice mode is alive if:
-  //   - mode is voice
-  //   - not disabled/locked
-  //   - mic not denied
-  //   - EITHER native STT is healthy, OR Whisper has taken over (and hasn't also failed)
+  // ── canListen: voice mode is alive if not locked, mic not blocked, provider ready ──
   const canListen =
     mode === 'voice' &&
     !disabled &&
     !waitingForInterviewer &&
     !micDenied &&
-    !whisperFailed &&
-    (!sttFailed || whisperActive);
-  canListenRef.current = canListen;
-  modeRef.current = mode;
+    !allFailed &&
+    (stt.status === 'ready' || stt.status === 'listening' || stt.status === 'idle');
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
-  const flashStatus = (msg: string, restore = 'Listening — speak your answer') => {
-    setStatus(msg);
-    if (statusResetRef.current) clearTimeout(statusResetRef.current);
-    statusResetRef.current = setTimeout(() => {
-      if (canListenRef.current) setStatus(restore);
-    }, 1600);
-  };
+  // ── Sync status label with provider state ──────────────────────────────────
+  useEffect(() => {
+    if (mode === 'keyboard') return;
+    if (allFailed || micDenied) return;
+    if (stt.status === 'loading') {
+      setStatusLabel(`Loading ${stt.activeProviderName ?? 'speech engine'} (${stt.loadingProgress}%)…`);
+    } else if (stt.status === 'error') {
+      setStatusLabel(stt.errorMsg || 'Speech engine error');
+    } else if (stt.status === 'listening') {
+      const fallbackNote = stt.isUsingFallback ? ' (fallback)' : '';
+      setStatusLabel(`🎙 ${stt.activeProviderName}${fallbackNote} — listening`);
+    } else if (stt.status === 'ready' || stt.status === 'idle') {
+      setStatusLabel(`${stt.activeProviderName ?? 'Microphone'} ready`);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stt.status, stt.loadingProgress, stt.activeProviderName, stt.isUsingFallback, mode, allFailed, micDenied]);
 
+  // ── Mode switching ─────────────────────────────────────────────────────────
   const switchMode = (next: AnswerInputMode) => {
     modeRef.current = next;
     if (next === 'keyboard') {
-      canListenRef.current = false;
-      stopRecognition();
+      stt.stopRecording();
       setListening(false);
       setMode('keyboard');
       onModeChange?.('keyboard');
-      setSttReconnecting(false);
       setIdleNudge(false);
-      setStatus('Keyboard input');
+      setStatusLabel('Keyboard input');
       return;
     }
-
-    sttDeadRef.current = false;
-    setSttFailed(false);
-    setWhisperActive(false);
-    setWhisperFailed(false);
-    setSttReconnecting(false);
-    networkFailsRef.current = 0;
     setMode('voice');
     onModeChange?.('voice');
-    setStatus('Starting microphone…');
+    setStatusLabel('Starting microphone…');
   };
 
-  const stopRecognition = () => {
-    if (whisperActive) {
-      whisper.stopRecording();
-    }
-    if (restartTimerRef.current) {
-      clearTimeout(restartTimerRef.current);
-      restartTimerRef.current = null;
-    }
-    try { recognitionRef.current?.stop(); } catch { /* ignore */ }
-    recognitionRef.current = null;
-  };
-
-  const startRecognition = () => {
-    // If Whisper is our active engine
-    if (whisperActive) {
-      // Only start if Whisper is ready (it might still be loading the model)
-      if (whisper.status === 'ready' || whisper.status === 'idle') {
-        whisper.startRecording();
-        setListening(true);
-        setStatus('Listening — local AI 🎙');
-      } else if (whisper.status === 'loading') {
-        setStatus(`Loading local AI model (${whisper.loadingProgress}%)…`);
-      }
+  // ── Start/stop recognition when canListen changes ─────────────────────────
+  useEffect(() => {
+    if (!canListen) {
+      stt.stopRecording();
+      setListening(false);
+      if (waitingForInterviewer) setStatusLabel('Waiting for interviewer…');
+      else if (disabled) setStatusLabel('Session closed');
+      else if (mode === 'keyboard') setStatusLabel('Keyboard input');
       return;
     }
 
-    // Native Web Speech API path
-    if (sttDeadRef.current) return;
-    const Ctor = getSpeechRecognitionCtor();
-    if (!Ctor || cancelledRef.current || !canListenRef.current) return;
+    setListening(true);
+    stt.startRecording();
 
-    stopRecognition();
-    baselineRef.current = committedRef.current;
-
-    const rec = new Ctor();
-    rec.continuous = true;
-    rec.interimResults = true;
-    rec.lang = typeof navigator !== 'undefined' && navigator.language ? navigator.language : 'en-US';
-
-    rec.onstart = () => {
-      if (cancelledRef.current || !canListenRef.current) return;
-      setListening(true);
-      setStatus(`Listening — say "${VOICE_DELETE_WORD}" to delete a word`);
+    return () => {
+      stt.stopRecording();
+      setListening(false);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canListen]);
 
-    rec.onresult = (event) => {
-      if (sttDeadRef.current || modeRef.current !== 'voice') return;
-      networkFailsRef.current = 0;
-      setSttReconnecting(false);
+  // ── Reset committed text when parent clears the input after send ───────────
+  useEffect(() => {
+    if (!value.trim()) {
+      stt.resetText();
       lastSpeechRef.current = Date.now();
       setIdleNudge(false);
-
-      const { finalText, interimText } = readSpeechTranscript(event);
-      const mergedRaw = joinUtterances(baselineRef.current, finalText);
-      const { text: merged, deletedWords } = applyAbhyasVoiceCommands(mergedRaw);
-      committedRef.current = merged;
-
-      if (deletedWords > 0) {
-        flashStatus(deletedWords === 1 ? 'Deleted last word' : `Deleted ${deletedWords} words`);
-      }
-
-      const display = joinUtterances(merged, interimText);
-      onChangeRef.current(display);
-    };
-
-    rec.onerror = (event?: { error?: string }) => {
-      if (cancelledRef.current) return;
-      const code = event?.error || 'error';
-
-      if (code === 'not-allowed') {
-        sttDeadRef.current = true;
-        setSttFailed(true);
-        setMicDenied(true);
-        setListening(false);
-        switchMode('keyboard');
-        setStatus('Microphone permission blocked — use keyboard');
-        return;
-      }
-
-      if (code === 'no-speech' || code === 'aborted') return;
-
-      if (code === 'network') {
-        networkFailsRef.current += 1;
-        setListening(false);
-        // Linux/Brave often can't reach Google STT — flip to local Whisper immediately
-        console.warn('[STT] Native network failed — switching to local Whisper STT');
-        sttDeadRef.current = true;
-        // Do NOT setSttFailed(true) here — that would block canListen
-        if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
-        try { recognitionRef.current?.stop(); } catch { /* ignore */ }
-        recognitionRef.current = null;
-        setWhisperActive(true);
-        setStatus('Switching to local AI transcription…');
-        return;
-      }
-
-      setListening(false);
-      setStatus(`Speech issue (${code})`);
-    };
-
-    rec.onend = () => {
-      setListening(false);
-      baselineRef.current = committedRef.current;
-      if (cancelledRef.current || sttDeadRef.current || !canListenRef.current) return;
-      if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
-      const delay = sttRestartDelay(networkFailsRef.current);
-      restartTimerRef.current = setTimeout(() => {
-        if (cancelledRef.current || sttDeadRef.current || !canListenRef.current) return;
-        startRecognition();
-      }, delay);
-    };
-
-    recognitionRef.current = rec;
-    try {
-      rec.start();
-    } catch {
-      setListening(false);
-      setStatus('Could not start microphone');
     }
-  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
 
-  // ── Mic level meter (for orb glow) ───────────────────────────────────────
+  // ── Mic level meter (for orb glow) ────────────────────────────────────────
+  // Only run when ONNX is NOT active (ONNX owns the mic itself).
+  // When ONNX is active the level meter reflects the shared stream it manages.
   useEffect(() => {
     cancelledRef.current = false;
     let audioCtx: AudioContext | null = null;
 
+    const isOnnxActive = stt.activeProviderId === 'onnx-asr' && mode === 'voice';
+    if (mode !== 'voice' || isOnnxActive) {
+      onLevelChange?.(0);
+      return;
+    }
+
     (async () => {
-      // Whisper owns the mic when active — don't double-open
-      if (mode !== 'voice' || whisperActive) {
-        onLevelChange?.(0);
-        return;
-      }
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        if (cancelledRef.current) {
-          stream.getTracks().forEach((t) => t.stop());
-          return;
-        }
+        if (cancelledRef.current) { stream.getTracks().forEach((t) => t.stop()); return; }
         streamRef.current = stream;
         setMicDenied(false);
 
         audioCtx = new AudioContext();
-        if (audioCtx.state === 'suspended') {
-          try { await audioCtx.resume(); } catch { /* ignore */ }
-        }
+        if (audioCtx.state === 'suspended') { try { await audioCtx.resume(); } catch { /* ignore */ } }
         const source = audioCtx.createMediaStreamSource(stream);
         const analyser = audioCtx.createAnalyser();
         analyser.fftSize = 2048;
@@ -327,11 +205,10 @@ export function AnswerComposer({
       } catch {
         if (!cancelledRef.current) {
           setMicDenied(true);
-          setSttFailed(true);
-          sttDeadRef.current = true;
-          setStatus('Microphone blocked — switched to keyboard');
           setMode('keyboard');
+          modeRef.current = 'keyboard';
           onModeChange?.('keyboard');
+          setStatusLabel('Microphone blocked — switched to keyboard');
         }
       }
     })();
@@ -344,89 +221,44 @@ export function AnswerComposer({
       try { audioCtx?.close(); } catch { /* ignore */ }
       onLevelChange?.(0);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, whisperActive]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, stt.activeProviderId]);
 
-  // ── When whisperActive turns on, start Whisper (if it's ready) ───────────
+  // ── Idle nudge after 45s of silence during voice mode ─────────────────────
   useEffect(() => {
-    if (!whisperActive || !canListenRef.current) return;
-    if (whisper.status === 'ready' || whisper.status === 'idle') {
-      setListening(true);
-      whisper.startRecording();
-      setStatus('Listening — local AI 🎙');
-    } else if (whisper.status === 'loading') {
-      setStatus(`Loading local AI model (${whisper.loadingProgress}%)…`);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [whisperActive]);
+    if (idleTimerRef.current) clearInterval(idleTimerRef.current);
+    if (mode !== 'voice' || disabled || waitingForInterviewer) return;
+    idleTimerRef.current = setInterval(() => {
+      if (Date.now() - lastSpeechRef.current > 45_000 && modeRef.current === 'voice') {
+        setIdleNudge(true);
+      }
+    }, 5000);
+    return () => { if (idleTimerRef.current) clearInterval(idleTimerRef.current); };
+  }, [mode, disabled, waitingForInterviewer]);
 
-  // ── When Whisper finishes loading, auto-start recording ──────────────────
-  useEffect(() => {
-    if (whisperActive && canListenRef.current && whisper.status === 'ready') {
-      setListening(true);
-      whisper.startRecording();
-      setStatus('Listening — local AI 🎙');
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [whisper.status]);
-
-  // ── Start / pause recognition with turn state ─────────────────────────────
-  useEffect(() => {
-    if (!canListen) {
-      stopRecognition();
-      setListening(false);
-      if (waitingForInterviewer) setStatus('Waiting for interviewer…');
-      else if (disabled) setStatus('Session closed');
-      else if (mode === 'keyboard') setStatus('Keyboard input');
-      return;
-    }
-
-    committedRef.current = value.trim();
-    baselineRef.current = value.trim();
-    startRecognition();
-
-    return () => { stopRecognition(); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canListen]);
-
-  // ── Keep committed baseline in sync when parent clears after send ─────────
-  useEffect(() => {
-    if (!value.trim()) {
-      committedRef.current = '';
-      baselineRef.current = '';
-      lastSpeechRef.current = Date.now();
-      setIdleNudge(false);
-    }
-  }, [value]);
-
-  useEffect(() => {
-    return () => {
-      if (statusResetRef.current) clearTimeout(statusResetRef.current);
-    };
-  }, []);
-
+  // ── Render ─────────────────────────────────────────────────────────────────
   const locked = disabled || waitingForInterviewer;
   const placeholder = locked
     ? waitingForInterviewer
       ? 'Interviewer is speaking… Please listen.'
       : 'Session closed — analysis in progress…'
     : mode === 'voice'
-      ? `Speak your answer — say "${VOICE_DELETE_WORD}" to delete a word…`
+      ? 'Speak your answer… (say "abhyas" to delete a word)'
       : 'Type your answer and press enter…';
 
   const dotColor =
     mode === 'voice' && listening
       ? T.green
-      : sttReconnecting
-        ? '#eab308'
-        : micDenied || whisperFailed
-          ? '#f87171'
+      : micDenied || allFailed
+        ? '#f87171'
+        : stt.status === 'loading'
+          ? '#eab308'
           : T.text3;
 
   const dotShadow =
     mode === 'voice' && listening
       ? '0 0 10px rgba(34,197,94,0.45)'
-      : sttReconnecting
+      : stt.status === 'loading'
         ? '0 0 8px rgba(234,179,8,0.4)'
         : 'none';
 
@@ -436,7 +268,7 @@ export function AnswerComposer({
       onSubmit={(e) => {
         e.preventDefault();
         if (!value.trim() || locked) return;
-        stopRecognition();
+        stt.stopRecording();
         onSubmit(e);
       }}
       style={{
@@ -449,11 +281,20 @@ export function AnswerComposer({
         position: 'relative',
       }}
     >
-      {/* Whisper Model Loading Overlay */}
-      {whisperActive && whisper.status === 'loading' && mode === 'voice' && !locked && (
+      {/* STT Provider Loading Indicator */}
+      {stt.status === 'loading' && mode === 'voice' && !locked && (
         <div style={{ position: 'absolute', top: -30, right: 16, fontSize: 11, color: T.green, display: 'flex', alignItems: 'center', gap: 6 }}>
           <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: T.green, animation: 'pulse 1.5s infinite' }} />
-          Loading local AI engine ({whisper.loadingProgress}%)…
+          {stt.activeProviderName
+            ? `Loading ${stt.activeProviderName} (${stt.loadingProgress}%)…`
+            : 'Loading speech engine…'}
+        </div>
+      )}
+
+      {/* Fallback indicator */}
+      {stt.isUsingFallback && mode === 'voice' && !locked && stt.status === 'listening' && (
+        <div style={{ position: 'absolute', top: -30, left: 16, fontSize: 10, color: '#eab308', fontFamily: 'monospace' }}>
+          ↩ Using {stt.activeProviderName} (fallback)
         </div>
       )}
 
@@ -476,8 +317,8 @@ export function AnswerComposer({
               boxShadow: dotShadow,
             }}
           />
-          <span style={{ fontSize: 11, fontFamily: 'monospace', color: sttReconnecting ? '#eab308' : T.text2 }}>
-            {status}
+          <span style={{ fontSize: 11, fontFamily: 'monospace', color: stt.status === 'loading' ? '#eab308' : T.text2 }}>
+            {statusLabel}
           </span>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -506,19 +347,19 @@ export function AnswerComposer({
             <button
               type="button"
               onClick={() => switchMode('voice')}
-              disabled={disabled || micDenied || (!speechAvailable && whisperFailed)}
+              disabled={disabled || micDenied || allFailed}
               style={{
                 fontSize: 10,
                 fontFamily: 'monospace',
                 fontWeight: 700,
                 textTransform: 'uppercase',
                 letterSpacing: '0.06em',
-                color: micDenied ? T.text3 : T.green,
+                color: micDenied || allFailed ? T.text3 : T.green,
                 background: 'transparent',
-                border: `1px solid ${micDenied ? T.border : 'rgba(34,197,94,0.35)'}`,
+                border: `1px solid ${micDenied || allFailed ? T.border : 'rgba(34,197,94,0.35)'}`,
                 borderRadius: 6,
                 padding: '4px 8px',
-                cursor: disabled || micDenied ? 'not-allowed' : 'pointer',
+                cursor: disabled || micDenied || allFailed ? 'not-allowed' : 'pointer',
               }}
             >
               Use microphone
@@ -527,11 +368,11 @@ export function AnswerComposer({
         </div>
       </div>
 
-      {(micDenied || whisperFailed) && mode === 'keyboard' && (
+      {(micDenied || allFailed) && mode === 'keyboard' && (
         <p style={{ fontSize: 11, color: '#eab308', margin: 0, lineHeight: 1.4 }}>
           {micDenied
             ? 'Microphone access blocked. Continue by typing your answers.'
-            : 'All speech engines unavailable. Continue by typing your answers.'}
+            : getSttUnavailableMessage()}
         </p>
       )}
 
@@ -547,8 +388,8 @@ export function AnswerComposer({
           onChange={(e) => {
             onChange(e.target.value);
             if (mode === 'voice') {
-              committedRef.current = e.target.value.trim();
-              baselineRef.current = e.target.value.trim();
+              // Keep provider's committed text in sync with manual edits
+              stt.resetText();
             }
           }}
           placeholder={placeholder}
@@ -572,7 +413,7 @@ export function AnswerComposer({
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
               if (!value.trim() || locked) return;
-              stopRecognition();
+              stt.stopRecording();
               onSubmit(e as unknown as React.FormEvent);
             }
           }}

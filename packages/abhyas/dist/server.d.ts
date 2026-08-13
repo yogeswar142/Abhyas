@@ -1,7 +1,10 @@
+import type { SttConfig } from './stt/types.js';
 export interface BridgeState {
     ollamaUrl: string;
     selectedModel: string;
     port: number;
+    /** Resolved STT provider config from the startup flow. */
+    sttConfig?: SttConfig;
 }
 /** Periodically re-touch the selected model so Ollama does not unload it. */
 export declare function startModelKeepAlive(state: BridgeState): NodeJS.Timeout;

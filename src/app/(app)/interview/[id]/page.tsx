@@ -1485,6 +1485,7 @@ export default function ActiveSessionPage({ params }: { params: Promise<{ id: st
                 waitingForInterviewer={isInterviewerResponding || isAiSpeaking}
                 onLevelChange={setMicLevel}
                 onModeChange={setAnswerMode}
+                bridgeUrl={bridge?.bridgeUrl ?? null}
               />
             </Card>
           </div>
